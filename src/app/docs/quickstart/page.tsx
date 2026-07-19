@@ -13,7 +13,7 @@ import {
 export const metadata: Metadata = {
   title: "Quickstart",
   description:
-    "Install ShiftCut, connect it to your coding agent, and make your first edit — turn a video into shorts from a single prompt.",
+    "Add ShiftCut to your coding agent and make your first edit — turn a video into shorts from a single prompt.",
 };
 
 export default function Quickstart() {
@@ -22,79 +22,68 @@ export default function Quickstart() {
       <DocHeader
         eyebrow="Getting started"
         title="Quickstart"
-        intro="Go from a raw video to a finished edit in a few minutes. You'll install ShiftCut, wire it into your agent, and run your first edit from a prompt."
+        intro="Go from a raw video to a finished edit in a few minutes. Add the skill to your agent, point it at a file, and describe what you want."
       />
 
       <Callout title="Prerequisites">
-        Node.js 20.9+ and FFmpeg on your PATH. Whisper.cpp and a headless
-        Chromium are fetched on first use. Everything runs locally — no account
-        required.
+        Node.js 22+ and FFmpeg on your PATH. Whisper.cpp and a headless Chromium
+        are fetched on first use. Everything runs locally — no account required.
       </Callout>
 
       <Steps>
-        <Step title="Install the CLI">
-          <P>Scaffold a project and pull in the local editing engine:</P>
-          <Code>{`$ npx shiftcut init my-edits
-$ cd my-edits`}</Code>
+        <Step title="Add the skill to your agent">
+          <P>One command installs ShiftCut for your coding agent:</P>
+          <Code>{`$ npx skills add shiftcut/shiftcut`}</Code>
         </Step>
 
-        <Step title="Add ShiftCut to your agent">
+        <Step title="Restart your agent">
           <P>
-            Register ShiftCut&apos;s skills with your coding agent. This exposes
-            the editing engine as tools the agent can plan against:
-          </P>
-          <Code>{`$ npx shiftcut add claude-code
-# also: cursor · codex · gemini-cli`}</Code>
-          <P>
-            Restart your agent so it picks up the new commands. In Claude Code,
-            start a request with <code>/shiftcut</code>.
+            Reload your agent so it picks up the skill. In Claude Code, start a
+            message with <code>/shiftcut</code> to load the editing context.
           </P>
         </Step>
 
-        <Step title="Drop in a video">
-          <P>Put any file in the project — or point at one anywhere on disk:</P>
-          <Code>{`my-edits/
-├── shiftcut.json      # project + engine config
-├── media/
-│   └── interview.mp4  # your footage
-└── out/               # rendered results`}</Code>
+        <Step title="Point it at a video">
+          <P>
+            No project to scaffold — just reference any file you already have:
+          </P>
+          <Code>{`❯ /shiftcut open interview.mp4`}</Code>
+          <P>
+            ShiftCut watches the footage locally — transcript, scenes, and
+            silences — so it can edit against what&apos;s actually there.
+          </P>
         </Step>
 
         <Step title="Describe the edit">
           <P>Tell your agent what you want in plain language:</P>
-          <Code>{`❯ open media/interview.mp4 and cut it into 5 shorts,
-  add captions, and export vertical`}</Code>
+          <Code>{`❯ cut it into 5 shorts, add captions, and export vertical`}</Code>
           <P>
-            ShiftCut transcribes locally, finds the strongest moments, reframes
-            to 9:16, styles captions, and renders — reporting each operation so
-            the agent (and you) can inspect and adjust.
+            ShiftCut finds the strongest moments, reframes to 9:16, styles
+            captions, and renders — telling you what it did so you can adjust.
           </P>
         </Step>
 
         <Step title="Iterate conversationally">
           <P>
-            Don&apos;t re-prompt from scratch. Refine the same project like
-            you&apos;d talk to an editor:
+            Don&apos;t re-prompt from scratch. Refine like you&apos;d talk to an
+            editor:
           </P>
           <Code>{`❯ make short-02 punchier and trim the intro
-❯ use Hormozi-style captions instead
+❯ use bolder captions instead
 ❯ re-render just the vertical exports`}</Code>
         </Step>
       </Steps>
 
-      <H2>Prefer the CLI?</H2>
+      <H2>Prefer the terminal?</H2>
       <P>
-        Every agent action maps to a scriptable command, so the same edit runs
-        headless in CI or a batch job:
+        The same edits run headless from the CLI, so they drop straight into
+        scripts and CI:
       </P>
-      <Code>{`$ shiftcut edit media/interview.mp4 \\
-    --shorts 5 --captions hormozi --aspect 9:16 \\
-    --out out/`}</Code>
+      <Code>{`$ shiftcut render --out out/`}</Code>
 
       <Callout tone="muted" title="Same result, every time">
-        A project always produces the same edit. Commit{" "}
-        <code>shiftcut.json</code> and your whole team gets the exact same
-        result — on any machine.
+        A composition always renders the same. Commit the project folder and
+        your whole team gets the exact same result — on any machine.
       </Callout>
 
       <NextCard href="/docs/installation" label="Installation — full setup" />

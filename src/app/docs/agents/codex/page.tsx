@@ -15,7 +15,7 @@ export default function Codex() {
         intro="ShiftCut registers as tools Codex can call, turning plain-language edit requests into real editing operations."
       />
       <H2>Install</H2>
-      <Code>{`$ shiftcut add codex`}</Code>
+      <Code>{`$ npx skills add shiftcut/shiftcut`}</Code>
       <H2>Make an edit</H2>
       <Code>{`❯ open media/demo.mp4, trim dead air, add captions,
   and render a 45s highlight`}</Code>

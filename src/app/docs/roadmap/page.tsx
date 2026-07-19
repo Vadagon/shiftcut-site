@@ -9,29 +9,30 @@ export const metadata: Metadata = {
 const phases = [
   {
     tag: "Now",
-    title: "The editing engine",
+    title: "The editor",
     items: [
-      "Local understand → edit → transform → render loop",
-      "Claude Code, Cursor, Codex, Gemini CLI integrations",
-      "Deterministic FFmpeg + Chromium render pipeline",
+      "Local understanding: transcribe, scene & silence detection",
+      "First edits: shorts, captions, remove-silences, reframe",
+      "Claude Code skill, plus Cursor, Codex, and Gemini CLI",
+      "Live browser preview + reproducible local render",
     ],
   },
   {
     tag: "Next",
-    title: "Depth & Studio",
+    title: "Depth",
     items: [
-      "Browser Studio visual timeline (round-trips with agents)",
-      "Expanded operation catalog: transitions, restyle, translate",
-      "Project templates and reusable workflows",
+      "Wider edit catalog: cut/reorder/retime, titles, transitions, color",
+      "Replace-background and replace-audio (all local)",
+      "Reusable templates and workflows",
     ],
   },
   {
     tag: "Later",
-    title: "Platform",
+    title: "Surfaces",
     items: [
-      "Hosted API and batch rendering",
-      "Team workflows and shared operation libraries",
-      "An open catalog of community operations and styles",
+      "Browser Studio — a CapCut-style visual timeline",
+      "An embeddable API for your own product or pipeline",
+      "An open catalog of community styles and blocks",
     ],
   },
 ];
@@ -46,8 +47,8 @@ export default function Roadmap() {
       />
 
       <P>
-        The through-line never changes: one deterministic, local-first editing
-        engine that any agent can drive. Here&apos;s the shape of what&apos;s
+        The through-line never changes: one local, reproducible editor that any
+        agent can drive. Here&apos;s the shape of what&apos;s
         coming.
       </P>
 

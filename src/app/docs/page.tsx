@@ -53,7 +53,7 @@ export default function DocsIntro() {
           "Remove filler words, silences, and awkward pauses",
           "Add styled, synced captions and reframe to vertical",
           "Generate a trailer or highlight reel from long footage",
-          "Replace backgrounds, swap audio, translate, and restyle",
+          "Replace the background, swap the audio, and clean up the color",
         ].map((t) => (
           <li key={t} className="flex gap-3">
             <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />

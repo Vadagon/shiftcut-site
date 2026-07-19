@@ -2,7 +2,8 @@ import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { TerminalDemo } from "@/components/home/terminal-demo";
-import { ArrowIcon, CheckIcon } from "@/components/icons";
+import { InstallPicker } from "@/components/home/install-picker";
+import { ArrowIcon, CheckIcon, GitHubIcon } from "@/components/icons";
 import { agents, benefits, examplePrompts, site, steps, surfaces } from "@/lib/site";
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
@@ -32,7 +33,7 @@ export default function Home() {
             <div>
               <Eyebrow>
                 <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-                {site.tagline} · runs on your machine
+                Free &amp; open source · {site.tagline}
               </Eyebrow>
 
               <h1 className="mt-6 text-balance text-4xl font-semibold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl">
@@ -65,13 +66,15 @@ export default function Home() {
                 </a>
               </div>
 
-              <div className="mt-6 inline-flex items-center gap-3 rounded-lg border border-border bg-[#0c0c0e] px-3.5 py-2.5 font-mono text-[13px]">
-                <span className="text-fg-subtle select-none">$</span>
-                <span className="text-fg-muted">
-                  npx <span className="text-fg">shiftcut</span> init
-                </span>
-                <span className="text-fg-subtle">·</span>
-                <span className="text-accent">add to your agent</span>
+              <div className="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-xs text-fg-subtle">
+                {["Apache-2.0 open source", "Free forever", "100% local"].map(
+                  (b) => (
+                    <span key={b} className="inline-flex items-center gap-2">
+                      <span className="text-accent">✓</span>
+                      {b}
+                    </span>
+                  ),
+                )}
               </div>
             </div>
 
@@ -132,6 +135,15 @@ export default function Home() {
               </div>
             ))}
           </div>
+        </SectionShell>
+
+        {/* ── Install ─────────────────────────────────────────── */}
+        <SectionShell
+          eyebrow="Get it in seconds"
+          title="Pick your tool. Copy one line."
+          lead="ShiftCut installs as a skill for the coding agent you already have. One command and you're editing."
+        >
+          <InstallPicker />
         </SectionShell>
 
         {/* ── How it works ────────────────────────────────────── */}
@@ -240,13 +252,19 @@ export default function Home() {
                 Read the quickstart
                 <ArrowIcon className="h-4 w-4" />
               </Link>
-              <Link
-                href="/docs"
+              <a
+                href={site.github}
+                target="_blank"
+                rel="noreferrer"
                 className="inline-flex items-center gap-2 rounded-lg border border-border px-5 py-3 text-sm font-medium text-fg transition-colors hover:border-border-strong"
               >
-                Browse the docs
-              </Link>
+                <GitHubIcon className="h-4 w-4" />
+                Star on GitHub
+              </a>
             </div>
+            <p className="mt-6 font-mono text-xs text-fg-subtle">
+              Free forever · Apache-2.0 · runs on your machine
+            </p>
           </div>
         </section>
       </main>

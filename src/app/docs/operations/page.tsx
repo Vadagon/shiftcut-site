@@ -4,7 +4,7 @@ import { DocHeader, H2, P, ComingSoon, NextCard } from "@/components/docs/doc-ui
 export const metadata: Metadata = {
   title: "Editing operations",
   description:
-    "The catalog of ShiftCut editing operations — the composable building blocks agents plan against.",
+    "The edits ShiftCut can make to a composition — cutting, understanding, captioning, transforming, and exporting. All local.",
 };
 
 const groups = [
@@ -18,11 +18,11 @@ const groups = [
   },
   {
     title: "Style & caption",
-    ops: ["captions", "titles", "transitions", "restyle", "color"],
+    ops: ["captions", "titles", "transitions", "color"],
   },
   {
     title: "Transform",
-    ops: ["reframe", "remove-background", "replace-audio", "translate", "upscale"],
+    ops: ["reframe", "remove-background", "replace-audio"],
   },
   {
     title: "Output",
@@ -36,14 +36,15 @@ export default function Operations() {
       <DocHeader
         eyebrow="Reference"
         title="Editing operations"
-        intro="Operations are the composable building blocks of every edit. Agents plan sequences of them; you can too."
+        intro="The edits your agent makes to a composition. Each one is a change to the project — your source files are never touched — and runs entirely on your machine."
       />
 
       <ComingSoon />
 
       <P>
-        Each operation is non-destructive and repeatable, with typed inputs and
-        structured results. The catalog it will document:
+        First to ship: <strong>shorts</strong>, <strong>captions</strong>,{" "}
+        <strong>remove-silences</strong>, and <strong>reframe</strong>. The
+        wider catalog it will document:
       </P>
 
       <div className="my-8 grid gap-4 sm:grid-cols-2">
@@ -66,6 +67,12 @@ export default function Operations() {
           </div>
         ))}
       </div>
+
+      <P>
+        Need something from scratch — an intro, a title card, motion graphics?
+        ShiftCut builds those as compositions too. Editing real footage comes
+        first; generation follows.
+      </P>
 
       <NextCard href="/docs/project-format" label="Project format" />
     </>

@@ -29,6 +29,33 @@ export const agents = [
   { name: "API", kind: "surface", glyph: "{}" },
 ] as const;
 
+// Install — one command adds the skill; the "then" step differs per tool.
+// Claude Code is the default and primary target.
+export const installCommand = "npx skills add shiftcut/shiftcut";
+
+export const installTargets = [
+  {
+    id: "claude-code",
+    name: "Claude Code",
+    note: "Restart Claude Code, then start a message with /shiftcut.",
+  },
+  {
+    id: "cursor",
+    name: "Cursor",
+    note: "Reload Cursor, then reference a video and describe the edit.",
+  },
+  {
+    id: "codex",
+    name: "Codex",
+    note: "Restart Codex — the skill is available as tools it can call.",
+  },
+  {
+    id: "gemini-cli",
+    name: "Gemini CLI",
+    note: "Restart Gemini CLI and edit video straight from your terminal.",
+  },
+] as const;
+
 // The magic — real things you say out loud to your agent.
 export const examplePrompts = [
   { text: "Turn this podcast into five Shorts.", tag: "Repurpose" },
@@ -94,21 +121,21 @@ export const surfaces = [
     href: "/docs/agents/claude-code",
   },
   {
-    name: "Browser Studio",
-    feels: "feels like CapCut",
-    body: "A visual timeline for when you want to nudge something by hand. Every change is the same edit your agent would make.",
-    href: "/docs/studio",
-  },
-  {
     name: "Command line",
     feels: "for power users",
-    body: "One command to edit, batch, and export — perfect for scripts and repeatable jobs.",
+    body: "Preview, render, and batch from the terminal — perfect for scripts and repeatable jobs.",
     href: "/docs/cli",
   },
   {
+    name: "Browser Studio",
+    feels: "coming soon",
+    body: "A CapCut-style visual timeline for nudging things by hand — driving the exact same project as your agent.",
+    href: "/docs/studio",
+  },
+  {
     name: "API",
-    feels: "for your app",
-    body: "Drop the same editing power into your own product, server, or pipeline.",
+    feels: "coming soon",
+    body: "Drop the same local editing power into your own product, server, or pipeline.",
     href: "/docs/api",
   },
 ] as const;

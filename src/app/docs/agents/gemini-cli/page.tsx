@@ -15,14 +15,13 @@ export default function GeminiCli() {
         intro="Wire ShiftCut into Gemini CLI to edit video straight from your terminal, driven by natural language."
       />
       <H2>Install</H2>
-      <Code>{`$ shiftcut add gemini-cli`}</Code>
+      <Code>{`$ npx skills add shiftcut/shiftcut`}</Code>
       <H2>Make an edit</H2>
-      <Code>{`❯ turn media/stream.mp4 into three shorts and
-  translate the captions to Spanish`}</Code>
+      <Code>{`❯ turn media/stream.mp4 into three shorts
+  with bold captions`}</Code>
       <P>
-        Everything runs locally and deterministically, so results are the same
-        whether you use Gemini CLI, Claude Code, or the raw{" "}
-        <a href="/docs/cli">CLI</a>.
+        Everything runs locally, so results are the same whether you use Gemini
+        CLI, Claude Code, or the raw <a href="/docs/cli">CLI</a>.
       </P>
       <NextCard href="/docs/agents/prompting" label="Prompting patterns" />
     </>

@@ -15,8 +15,8 @@ export default function Cursor() {
         intro="Drive ShiftCut from Cursor's composer. Reference a video and describe the edit — Cursor runs the operations against the local engine."
       />
       <H2>Install</H2>
-      <Code>{`$ shiftcut add cursor`}</Code>
-      <P>Reload Cursor so it picks up the ShiftCut tools.</P>
+      <Code>{`$ npx skills add shiftcut/shiftcut`}</Code>
+      <P>Reload Cursor so it picks up the ShiftCut skill.</P>
       <H2>Make an edit</H2>
       <Code>{`@media/interview.mp4 cut this into 5 shorts with
 captions and export vertical`}</Code>

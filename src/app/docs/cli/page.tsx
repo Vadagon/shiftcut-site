@@ -4,15 +4,14 @@ import { DocHeader, H2, P, Code, Callout, NextCard } from "@/components/docs/doc
 export const metadata: Metadata = {
   title: "CLI",
   description:
-    "The ShiftCut CLI — scriptable, composable commands for editing, batching, and rendering video in CI.",
+    "The ShiftCut CLI — scaffold, preview, and render projects locally, and drop the same edits into scripts and CI.",
 };
 
 const commands = [
   ["shiftcut init <dir>", "Scaffold a new project"],
-  ["shiftcut add <agent>", "Register skills with an agent"],
-  ["shiftcut edit <file>", "Run an edit from flags"],
+  ["shiftcut preview", "Live browser preview with hot reload"],
   ["shiftcut render", "Render the current project"],
-  ["shiftcut studio", "Open Browser Studio"],
+  ["shiftcut check", "Validate a composition"],
   ["shiftcut doctor", "Check the local environment"],
 ];
 
@@ -22,8 +21,15 @@ export default function Cli() {
       <DocHeader
         eyebrow="Surfaces"
         title="CLI"
-        intro="The engine with nothing between you and it. Scriptable, composable commands for CI, batch jobs, and power users."
+        intro="The tools your agent uses, on the command line. Scaffold, preview, and render locally — perfect for scripts and CI."
       />
+
+      <Callout tone="muted" title="Installing the skill?">
+        To add ShiftCut to your agent, use{" "}
+        <code>npx skills add shiftcut/shiftcut</code> — see{" "}
+        <a href="/docs/installation">Installation</a>. The commands below are for
+        working with a project directly.
+      </Callout>
 
       <H2>Commands</H2>
       <div className="my-6 overflow-hidden rounded-xl border border-border">
@@ -41,17 +47,13 @@ export default function Cli() {
         </table>
       </div>
 
-      <H2>Edit from flags</H2>
-      <Code>{`$ shiftcut edit media/interview.mp4 \\
-    --shorts 5 \\
-    --captions hormozi \\
-    --aspect 9:16 \\
-    --remove-silences \\
-    --out out/`}</Code>
+      <H2>Preview &amp; render</H2>
+      <Code>{`$ shiftcut preview          # watch it live in the browser
+$ shiftcut render --out out/  # render to a file`}</Code>
 
       <Callout title="Built for CI">
-        Deterministic renders mean the CLI drops straight into pipelines — cache
-        the engine once and every run is reproducible.
+        Renders are reproducible, so the CLI drops straight into pipelines —
+        cache the tools once and every run comes out the same.
       </Callout>
 
       <NextCard href="/docs/operations" label="Editing operations" />

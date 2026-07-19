@@ -27,7 +27,12 @@ export function SiteHeader() {
     >
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5 sm:px-8">
         <div className="flex items-center gap-8">
-          <Logo />
+          <div className="flex items-center gap-2.5">
+            <Logo />
+            <span className="hidden rounded-full border border-border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-fg-subtle sm:inline">
+              early
+            </span>
+          </div>
           <nav className="hidden items-center gap-6 md:flex">
             {primaryNav.map((item) => (
               <Link

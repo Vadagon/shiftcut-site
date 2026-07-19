@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { DocHeader, H2, P, Callout, NextCard } from "@/components/docs/doc-ui";
+import { DocHeader, H2, P, Callout, ComingSoon, NextCard } from "@/components/docs/doc-ui";
 
 export const metadata: Metadata = {
   title: "Browser Studio",
@@ -13,19 +13,27 @@ export default function Studio() {
       <DocHeader
         eyebrow="Surfaces"
         title="Browser Studio"
-        intro="A visual timeline for when you want to nudge by hand. It feels like CapCut — and it's driving the exact same engine as your agent."
+        intro="A visual timeline for when you want to nudge by hand. It'll feel like CapCut — and drive the exact same project as your agent."
       />
+
+      <ComingSoon />
+
+      <P>
+        Today ShiftCut ships a <strong>live browser preview</strong> — run{" "}
+        <code>shiftcut preview</code> to watch a composition update as your agent
+        edits it. The full CapCut-style visual timeline below is on the roadmap.
+      </P>
 
       <H2>Why a visual surface</H2>
       <P>
         Agents handle the heavy lifting, but sometimes you want to drag a clip,
-        retime a caption, or preview a cut yourself. Browser Studio gives you
+        retime a caption, or preview a cut yourself. Browser Studio will give you
         that timeline without leaving the ShiftCut model.
       </P>
 
       <Callout title="One model, two hands">
-        Every manual edit in Studio is recorded as the same{" "}
-        <a href="/docs/operations">operation</a> your agent would emit. Hand a
+        Every manual edit in Studio is just a change to the same{" "}
+        <a href="/docs/project-format">composition</a> your agent edits. Hand a
         project back to Claude Code and it picks up exactly where you left off —
         no translation, no drift.
       </Callout>
