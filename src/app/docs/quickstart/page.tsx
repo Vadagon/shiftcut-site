@@ -33,7 +33,7 @@ export default function Quickstart() {
       <Steps>
         <Step title="Add the skill to your agent">
           <P>One command installs ShiftCut for your coding agent:</P>
-          <Code>{`$ npx skills add shiftcut/shiftcut`}</Code>
+          <Code>{`$ npx skills add Vadagon/shiftcut`}</Code>
         </Step>
 
         <Step title="Restart your agent">

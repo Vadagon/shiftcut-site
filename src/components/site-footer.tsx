@@ -81,8 +81,27 @@ export function SiteFooter() {
         </div>
 
         <div className="mt-12 flex flex-col items-start justify-between gap-3 border-t border-border pt-6 text-xs text-fg-subtle sm:flex-row sm:items-center">
-          <p>© {new Date().getFullYear()} ShiftCut. Open source · Apache-2.0.</p>
-          <p className="font-mono">Runs on your machine · Free forever</p>
+          <p>
+            © {new Date().getFullYear()} ShiftCut — a project by{" "}
+            <a
+              href={site.companyUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="transition-colors hover:text-fg"
+            >
+              {site.company}
+            </a>
+            . Open source · Apache-2.0.
+          </p>
+          <div className="flex items-center gap-4">
+            <a
+              href={`mailto:${site.contact}`}
+              className="transition-colors hover:text-fg"
+            >
+              {site.contact}
+            </a>
+            <p className="font-mono">Runs on your machine · Free forever</p>
+          </div>
         </div>
       </div>
     </footer>

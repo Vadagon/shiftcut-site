@@ -17,7 +17,7 @@ export default function ClaudeCode() {
       />
 
       <H2>Install</H2>
-      <Code>{`$ npx skills add shiftcut/shiftcut`}</Code>
+      <Code>{`$ npx skills add Vadagon/shiftcut`}</Code>
       <P>
         Restart Claude Code, then start any request with <code>/shiftcut</code>{" "}
         to load the editing context.

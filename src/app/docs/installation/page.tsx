@@ -36,7 +36,7 @@ export default function Installation() {
         ShiftCut installs as a skill for your coding agent. One command works
         across every supported tool:
       </P>
-      <Code>{`$ npx skills add shiftcut/shiftcut`}</Code>
+      <Code>{`$ npx skills add Vadagon/shiftcut`}</Code>
       <P>
         Restart your agent so it loads the skill. In Claude Code, start a
         message with <code>/shiftcut</code>. See the{" "}

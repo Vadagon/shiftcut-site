@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { site } from "@/lib/site";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -13,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://shiftcut.dev"),
+  metadataBase: new URL(`https://${site.domain}`),
   title: {
     default: "ShiftCut — Let your AI edit your videos",
     template: "%s — ShiftCut",
@@ -33,7 +34,7 @@ export const metadata: Metadata = {
     title: "ShiftCut — Let your AI edit your videos",
     description:
       "Open any video. Tell your AI what you want. Get it back edited. CapCut on autopilot — free, open source, and running on your machine.",
-    url: "https://shiftcut.dev",
+    url: `https://${site.domain}`,
     siteName: "ShiftCut",
     type: "website",
   },

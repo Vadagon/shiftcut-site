@@ -5,8 +5,11 @@
 export const site = {
   name: "ShiftCut",
   tagline: "CapCut on autopilot",
-  domain: "shiftcut.dev",
-  github: "https://github.com/shiftcut/shiftcut",
+  domain: "shiftcut.verblike.com",
+  github: "https://github.com/Vadagon/shiftcut",
+  company: "Verblike LLC",
+  companyUrl: "https://verblike.com",
+  contact: "shiftcut@verblike.com",
   description:
     "The video editor your AI drives. Open any video, tell Claude Code, Cursor, or Codex what you want, and it does the editing — right on your machine.",
 } as const;
@@ -31,7 +34,7 @@ export const agents = [
 
 // Install — one command adds the skill; the "then" step differs per tool.
 // Claude Code is the default and primary target.
-export const installCommand = "npx skills add shiftcut/shiftcut";
+export const installCommand = "npx skills add Vadagon/shiftcut";
 
 export const installTargets = [
   {

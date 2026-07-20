@@ -26,7 +26,7 @@ export default function Cli() {
 
       <Callout tone="muted" title="Installing the skill?">
         To add ShiftCut to your agent, use{" "}
-        <code>npx skills add shiftcut/shiftcut</code> — see{" "}
+        <code>npx skills add Vadagon/shiftcut</code> — see{" "}
         <a href="/docs/installation">Installation</a>. The commands below are for
         working with a project directly.
       </Callout>

@@ -15,7 +15,7 @@ export default function GeminiCli() {
         intro="Wire ShiftCut into Gemini CLI to edit video straight from your terminal, driven by natural language."
       />
       <H2>Install</H2>
-      <Code>{`$ npx skills add shiftcut/shiftcut`}</Code>
+      <Code>{`$ npx skills add Vadagon/shiftcut`}</Code>
       <H2>Make an edit</H2>
       <Code>{`❯ turn media/stream.mp4 into three shorts
   with bold captions`}</Code>
