@@ -44,10 +44,6 @@
   --radius-lg: 14px;
 }
 
-* {
-  border-color: var(--border);
-}
-
 html {
   scroll-behavior: smooth;
 }
@@ -74,20 +70,6 @@ body::before {
 ::selection {
   background: var(--accent-soft);
   color: var(--accent-hover);
-}
-
-/* Scrollbar */
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--surface-2);
-  border-radius: 999px;
-  border: 2px solid var(--bg);
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #26272b;
 }
 
 /* Utility helpers -------------------------------------------------------- */
