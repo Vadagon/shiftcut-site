@@ -84,3 +84,12 @@ export interface ChatHistoryData {
   messages: ChatHistoryMessage[];
   updatedAt: number;
 }
+
+/** Compact model-facing memory. The complete chat transcript remains in
+ * ChatHistoryData for the UI and diagnostics, but is not repeatedly sent to AI. */
+export interface ChatMemoryData {
+  projectId: string;
+  summary: string;
+  summarizedThroughMessageId: string;
+  updatedAt: number;
+}

@@ -13,6 +13,7 @@ import type {
   StorageConfig,
   TimelineData,
   ChatHistoryData,
+  ChatMemoryData,
   ComponentArtifact,
   ComponentRegistryData,
   ProjectRevision,
@@ -35,6 +36,7 @@ class StorageService {
   // Per-project asset membership (which pool assets belong to a project).
   private membership = new IndexedDBAdapter<string[]>("shiftcut-membership", "membership", this.config.version);
   private chatHistory = new IndexedDBAdapter<ChatHistoryData>("shiftcut-chat", "history", this.config.version);
+  private chatMemory = new IndexedDBAdapter<ChatMemoryData>("shiftcut-chat-memory", "memory", this.config.version);
   private revisions = new IndexedDBAdapter<RevisionHistoryData>("shiftcut-revisions", "history", this.config.version);
 
   private timelineAdapter(projectId: string) {
@@ -60,6 +62,7 @@ class StorageService {
     await this.projects.remove(id);
     await this.membership.remove(id);
     await this.chatHistory.remove(id);
+    await this.chatMemory.remove(id);
     await this.revisions.remove(id);
     await this.timelineAdapter(id).remove("main");
     await this.componentAdapter(id).remove("registry");
@@ -99,6 +102,12 @@ class StorageService {
   }
   async saveChatHistory(projectId: string, messages: ChatHistoryData["messages"]): Promise<void> {
     await this.chatHistory.set(projectId, { projectId, messages, updatedAt: Date.now() });
+  }
+  async loadChatMemory(projectId: string): Promise<ChatMemoryData | undefined> {
+    return this.chatMemory.get(projectId);
+  }
+  async saveChatMemory(projectId: string, summary: string, summarizedThroughMessageId: string): Promise<void> {
+    await this.chatMemory.set(projectId, { projectId, summary, summarizedThroughMessageId, updatedAt: Date.now() });
   }
 
   // ── Timeline (per project) ──

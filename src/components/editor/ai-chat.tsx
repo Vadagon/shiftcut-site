@@ -7,6 +7,7 @@ import { useMediaStore } from "@/stores/media-store";
 import { usePanelStore } from "@/stores/panel-store";
 import { useComponentStore } from "@/stores/component-store";
 import { storageService } from "@/lib/storage/storage-service";
+import type { ChatMemoryData } from "@/lib/storage/types";
 import { uid } from "@/lib/utils";
 import { elementEnd, type ElementParams, type TimelineElement, type TimelineTrack, type TrackType } from "@/types/timeline";
 
@@ -29,11 +30,76 @@ type ChatResponse = {
   error?: string;
 };
 
+type ChatStreamStatus = { phase?: unknown; retry?: unknown };
+
+const RECENT_RAW_MESSAGES = 8;
+const COMPACT_AFTER_MESSAGES = 12;
+const COMPACT_AFTER_CHARS = 16_000;
+
+async function readChatStream(response: Response, onStatus: (status: ChatStreamStatus) => void): Promise<ChatResponse> {
+  if (!response.body) throw new Error("The AI response stream was unavailable.");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result: ChatResponse | null = null;
+  try {
+    while (true) {
+      const next = await reader.read();
+      if (next.done) break;
+      buffer += decoder.decode(next.value, { stream: true });
+      const events = buffer.split("\n\n");
+      buffer = events.pop() ?? "";
+      for (const event of events) {
+        const eventName = event.match(/^event:\s*(.+)$/m)?.[1];
+        const rawData = event.match(/^data:\s*(.+)$/m)?.[1];
+        if (!eventName || !rawData) continue;
+        const payload = JSON.parse(rawData) as ChatResponse & ChatStreamStatus;
+        if (eventName === "status") onStatus(payload);
+        else if (eventName === "error") throw new Error(payload.error ?? "AI response failed.");
+        else if (eventName === "result") result = payload;
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  if (!result) throw new Error("The AI response ended without a result.");
+  return result;
+}
+
+function modelMessages(messages: ChatMessage[]) {
+  return messages
+    .filter((message) => message.status !== "failed")
+    .map((message) => ({ role: message.role, content: message.body }));
+}
+
+async function compactContext(projectId: string, messages: ChatMessage[], memory: ChatMemoryData | null) {
+  const start = memory ? messages.findIndex((message) => message.id === memory.summarizedThroughMessageId) + 1 : 0;
+  const unsummarized = messages.slice(Math.max(0, start));
+  const chars = unsummarized.reduce((total, message) => total + message.body.length, 0);
+  const needsCompaction = unsummarized.length > COMPACT_AFTER_MESSAGES || chars > COMPACT_AFTER_CHARS;
+  if (!needsCompaction || unsummarized.length <= RECENT_RAW_MESSAGES) return { memory, messages: modelMessages(unsummarized) };
+
+  const toCompact = unsummarized.slice(0, -RECENT_RAW_MESSAGES);
+  const compacted = await fetch("/api/chat/compact", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ previousSummary: memory?.summary ?? "", messages: modelMessages(toCompact) }),
+  });
+  const result = await compacted.json().catch(() => null) as { summary?: unknown } | null;
+  if (!compacted.ok || typeof result?.summary !== "string") return { memory, messages: modelMessages(unsummarized.slice(-RECENT_RAW_MESSAGES)) };
+  const cursor = toCompact[toCompact.length - 1];
+  const nextMemory: ChatMemoryData = { projectId, summary: result.summary, summarizedThroughMessageId: cursor.id, updatedAt: Date.now() };
+  await storageService.saveChatMemory(projectId, nextMemory.summary, nextMemory.summarizedThroughMessageId);
+  return { memory: nextMemory, messages: modelMessages(unsummarized.slice(-RECENT_RAW_MESSAGES)) };
+}
+
 export function AiChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [conversation, setConversation] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
+  const [memory, setMemory] = useState<ChatMemoryData | null>(null);
   const [draft, setDraft] = useState("");
   const [isSending, setIsSending] = useState(false);
+  const [retryAttempt, setRetryAttempt] = useState<number | null>(null);
+  const [requestPhase, setRequestPhase] = useState<"compacting" | "thinking" | "retrying">("thinking");
   const [historyOpen, setHistoryOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const project = useProjectStore((state) => state.activeProject);
@@ -46,18 +112,18 @@ export function AiChat() {
     let cancelled = false;
     if (!project?.id) {
       queueMicrotask(() => {
-        if (!cancelled) { setMessages([]); setConversation([]); }
+        if (!cancelled) { setMessages([]); setMemory(null); }
       });
       return;
     }
     queueMicrotask(() => {
-      if (!cancelled) { setMessages([]); setConversation([]); }
+      if (!cancelled) { setMessages([]); setMemory(null); }
     });
     void storageService.loadChatHistory(project.id).then((history) => {
       if (cancelled || !history) return;
       setMessages(history.messages.map((message) => ({ id: message.id ?? uid("msg"), role: message.role, body: message.content, tools: message.tools, artifact: message.artifact, status: message.status, error: message.error })));
-      setConversation(history.messages.map((message) => ({ role: message.role, content: message.content })));
     });
+    void storageService.loadChatMemory(project.id).then((savedMemory) => { if (!cancelled) setMemory(savedMemory ?? null); });
     return () => { cancelled = true; };
   }, [project?.id]);
 
@@ -83,7 +149,7 @@ export function AiChat() {
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
-  }, [messages, isSending]);
+  }, [messages, isSending, retryAttempt]);
 
   const sendRequest = async (value: string, requestId?: string) => {
     if (!value || isSending) return;
@@ -91,42 +157,66 @@ export function AiChat() {
     const restructureRequested = /\b(?:restructure|resturcture|reorganize|reorganise|clean up|cleanup|compact)\b.*\b(?:timeline|tracks?)\b|\b(?:timeline|tracks?)\b.*\b(?:restructure|resturcture|reorganize|reorganise|clean up|cleanup|compact)\b/i.test(value);
     const requestSnapshot = project ? projectSnapshot(project, tracks, pool, components, selectedElementId) : undefined;
     const messageId = requestId ?? uid("msg");
-    const nextConversation = requestId ? conversation : [...conversation, { role: "user" as const, content: value }];
+    const pendingMessage: ChatMessage = { id: messageId, role: "user", body: value, status: "pending" };
+    const requestMessages = requestId
+      ? messages.map((message) => message.id === messageId ? { ...message, status: "pending" as const, error: undefined } : message)
+      : [...messages, pendingMessage];
     if (requestId) updateMessage(requestId, { status: "pending", error: undefined });
     else {
-      appendMessage({ id: messageId, role: "user", body: value, status: "pending" });
-      setConversation(nextConversation);
+      appendMessage(pendingMessage);
     }
     setDraft("");
+    setRetryAttempt(null);
+    setRequestPhase("thinking");
     setIsSending(true);
     try {
+      setRequestPhase("compacting");
+      const context = project ? await compactContext(project.id, requestMessages, memory) : { memory, messages: modelMessages(requestMessages) };
+      if (context.memory !== memory) setMemory(context.memory);
+      setRequestPhase("thinking");
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: nextConversation,
+          messages: context.messages,
           project: requestSnapshot,
+          memory: context.memory?.summary ?? "",
+          stream: true,
         }),
       });
-      const result = await response.json() as ChatResponse;
+      if (!response.ok) {
+        const failed = await response.json().catch(() => null) as ChatResponse | null;
+        throw new Error(failed?.error ?? "AI response failed.");
+      }
+      const result = await readChatStream(response, (status) => {
+        if (status.phase === "retry" && typeof status.retry === "number") { setRetryAttempt(status.retry); setRequestPhase("retrying"); }
+        if (status.phase === "thinking") setRequestPhase("thinking");
+      });
       const reply = result.reply ?? result.content;
       if (!response.ok || !reply) throw new Error(result.error ?? "AI response failed.");
       const currentRevision = useProjectStore.getState().activeProject?.revision;
-      const applied = currentRevision !== undefined && result.expectedRevision === currentRevision
+      const revisionMatches = currentRevision !== undefined && result.expectedRevision === currentRevision;
+      const applied = revisionMatches
         ? applyOperations(result.operations ?? [], animationRequested, restructureRequested)
         : [];
       if (applied.length) repairTimelineOverlaps();
+      if ((result.operations?.length ?? 0) > 0 && !applied.length) {
+        throw new Error(revisionMatches
+          ? "The AI edit payload could not be applied. Nothing was changed; retry the request."
+          : "The project changed while AI was responding. Nothing was changed; retry with the current revision.");
+      }
       updateMessage(messageId, { status: "complete", error: undefined });
       appendMessage({ id: uid("msg"), role: "assistant", body: reply, tools: applied.length ? `Applied: ${applied.join(", ")}` : undefined, artifact: {
         request: requestSnapshot,
-        response: { operations: result.operations ?? [], applied, timelineAfter: timelineContext(useTimelineStore.getState().tracks, useComponentStore.getState().components, true) },
+        response: { expectedRevision: result.expectedRevision ?? null, receivedAtRevision: currentRevision ?? null, revisionMatches, operations: result.operations ?? [], applied, timelineAfter: timelineContext(useTimelineStore.getState().tracks, useComponentStore.getState().components, true) },
       } });
-      setConversation((current) => [...current, { role: "assistant", content: reply }]);
     } catch (error) {
       const message = error instanceof Error ? error.message : "AI response failed.";
       updateMessage(messageId, { status: "failed", error: message });
     } finally {
       setIsSending(false);
+      setRetryAttempt(null);
+      setRequestPhase("thinking");
     }
   };
 
@@ -149,14 +239,14 @@ export function AiChat() {
               <div className={message.role === "user" ? "max-w-[88%] rounded-[3px] bg-[#e1dfdc] px-3 py-2 text-[13px] leading-5 text-[#292724]" : "text-[15px] leading-[1.55] text-[#252320]"}>
                 {message.tools && <div className="mb-2 flex items-center gap-2 text-[12px] text-[#807d78]"><span className="h-2 w-2 rounded-full bg-[#438d58]" />{message.tools}</div>}
                 <MessageText content={message.body} />
-                {message.role === "user" && message.status !== "complete" && <div className="mt-2 flex items-center justify-between gap-3 border-t border-[#c9c7c2] pt-2 text-[10px] text-[#77726c]">
-                  <span>{message.status === "failed" ? "No response" : isSending ? "Waiting for response" : "No response yet"}</span>
+                {message.role === "user" && message.status && message.status !== "complete" && <div className="mt-2 flex items-center justify-between gap-3 border-t border-[#c9c7c2] pt-2 text-[10px] text-[#77726c]">
+                  <span className={message.status === "failed" ? "text-[#b64132]" : undefined}>{message.status === "failed" ? `Failed: ${message.error ?? "No response"}` : requestPhase === "compacting" ? "Compressing older conversation" : requestPhase === "retrying" ? `Response check failed — retrying ${retryAttempt ?? 1}/3` : "Waiting for AI response"}</span>
                   <button type="button" disabled={isSending} onClick={() => void sendRequest(message.body, message.id)} className="font-semibold text-[#57524c] underline underline-offset-2 hover:text-[#292724] disabled:opacity-50">Retry</button>
                 </div>}
               </div>
             </div>
           ))}
-          {isSending && <ThinkingIndicator />}
+          {isSending && <ThinkingIndicator retryAttempt={retryAttempt} phase={requestPhase} />}
           <div ref={messagesEndRef} />
         </div>
       </div>
@@ -189,10 +279,10 @@ function MessageText({ content }: { content: string }) {
   );
 }
 
-function ThinkingIndicator() {
+function ThinkingIndicator({ retryAttempt, phase }: { retryAttempt: number | null; phase: "compacting" | "thinking" | "retrying" }) {
   return (
     <div role="status" aria-live="polite" className="flex items-center gap-2 text-[13px] text-[#77726c]">
-      <span>Thinking</span>
+      <span>{phase === "compacting" ? "Compressing older conversation" : retryAttempt ? `Response check failed — retrying ${retryAttempt}/3` : "Thinking"}</span>
       <span className="flex gap-1" aria-hidden="true"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#8a857e] [animation-delay:-0.2s]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#8a857e] [animation-delay:-0.1s]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#8a857e]" /></span>
     </div>
   );
@@ -209,15 +299,19 @@ function HistoryDrawer({ messages, onClose }: { messages: ChatMessage[]; onClose
       setCopiedKey(null);
     }
   };
-  const copyExchange = async (index: number) => {
-    const response = messages[index];
-    let request = "";
-    for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
-      if (messages[cursor].role === "user") { request = messages[cursor].body; break; }
-    }
-    const artifact = response.artifact ? `\n\n# ShiftCut structured artifact\n${JSON.stringify(response.artifact, null, 2)}` : "";
-    await copy(`exchange-${index}`, `# ShiftCut AI request\n${request}\n\n# ShiftCut AI response\n${response.body}${artifact}`);
+  const copyExchange = async (requestIndex: number, responseIndex?: number) => {
+    const request = messages[requestIndex];
+    const response = responseIndex === undefined ? undefined : messages[responseIndex];
+    const artifact = response?.artifact ? `\n\n# ShiftCut structured artifact\n${JSON.stringify(response.artifact, null, 2)}` : "";
+    const status = request.status ?? (response ? "complete" : "unfinished");
+    const error = request.error ? `\nError: ${request.error}` : "";
+    await copy(`exchange-${requestIndex}`, `# ShiftCut AI request\n${request.body}\n\n# Request status\n${status}${error}${response ? `\n\n# ShiftCut AI response\n${response.body}${artifact}` : "\n\n# ShiftCut AI response\n(no response saved)"}`);
   };
+  const requests = messages.flatMap((message, requestIndex) => {
+    if (message.role !== "user") return [];
+    const responseIndex = messages.findIndex((candidate, index) => index > requestIndex && candidate.role === "assistant" && !messages.slice(requestIndex + 1, index).some((between) => between.role === "user"));
+    return [{ request: message, requestIndex, responseIndex: responseIndex === -1 ? undefined : responseIndex }];
+  }).reverse();
   return (
     <div className="absolute inset-x-0 top-10 z-40 flex max-h-[70%] flex-col border-b border-[#aaa69f] bg-[#efeeeb] shadow-[0_8px_16px_rgba(0,0,0,.12)]">
       <div className="flex items-center justify-between border-b border-[#d5d2cc] px-4 py-3">
@@ -225,18 +319,23 @@ function HistoryDrawer({ messages, onClose }: { messages: ChatMessage[]; onClose
         <button type="button" onClick={onClose} aria-label="Close request history" className="h-6 w-6 text-[15px] text-[#69655f] hover:text-[#292724]">×</button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
-        {messages.length === 0 ? <p className="px-2 py-8 text-center text-[12px] text-[#77726c]">No AI requests yet.</p> : (
+        {requests.length === 0 ? <p className="px-2 py-8 text-center text-[12px] text-[#77726c]">No AI requests yet.</p> : (
           <div className="space-y-3">
-            {[...messages].map((message, index) => ({ message, index })).filter(({ message }) => message.role === "assistant").reverse().map(({ message, index }) => (
-              <article key={index} className="border border-[#d5d2cc] bg-[#f7f6f4] p-3">
+            {requests.map(({ request, requestIndex, responseIndex }) => {
+              const response = responseIndex === undefined ? undefined : messages[responseIndex];
+              const status = request.status ?? (response ? "complete" : "pending");
+              const statusLabel = status === "complete" ? "Applied / complete" : status === "failed" ? "Failed" : "Pending / unfinished";
+              const statusColor = status === "complete" ? "text-[#438d58]" : status === "failed" ? "text-[#b64132]" : "text-[#a27822]";
+              return <article key={request.id} className="border border-[#d5d2cc] bg-[#f7f6f4] p-3">
                 <div className="mb-2 text-[10px] font-semibold uppercase tracking-[.08em] text-[#89857e]">Request</div>
-                <p className="line-clamp-3 text-[11px] leading-4 text-[#49453f]">{previousRequest(messages, index)}</p>
-                <div className="mb-2 mt-3 text-[10px] font-semibold uppercase tracking-[.08em] text-[#89857e]">Response</div>
-                <p className="line-clamp-5 whitespace-pre-wrap text-[11px] leading-4 text-[#49453f]">{message.body}</p>
-                <button type="button" onClick={() => void copyExchange(index)} className="mt-3 border border-[#c9c7c2] bg-[#efeeeb] px-2 py-1 text-[10px] font-medium text-[#56514c] hover:border-[#77736d]">{copiedKey === `exchange-${index}` ? "Copied" : "Copy complete exchange"}</button>
-                <HistoryArtifact artifact={message.artifact} index={index} copiedKey={copiedKey} onCopy={copy} />
-              </article>
-            ))}
+                <p className="line-clamp-3 text-[11px] leading-4 text-[#49453f]">{request.body}</p>
+                <div className={`mt-2 text-[10px] font-semibold ${statusColor}`}>{statusLabel}{request.error ? ` — ${request.error}` : ""}</div>
+                {response && <><div className="mb-2 mt-3 text-[10px] font-semibold uppercase tracking-[.08em] text-[#89857e]">Response</div>
+                  <p className="line-clamp-5 whitespace-pre-wrap text-[11px] leading-4 text-[#49453f]">{response.body}</p></>}
+                <button type="button" title="Copies request status, response when available, protocol operations, revision check, and resulting timeline snapshot." onClick={() => void copyExchange(requestIndex, responseIndex)} className="mt-3 border border-[#c9c7c2] bg-[#efeeeb] px-2 py-1 text-[10px] font-medium text-[#56514c] hover:border-[#77736d]">{copiedKey === `exchange-${requestIndex}` ? "Debug payload copied" : "Copy debug payload"}</button>
+                {response && <HistoryArtifact artifact={response.artifact} index={responseIndex!} copiedKey={copiedKey} onCopy={copy} />}
+              </article>;
+            })}
           </div>
         )}
       </div>
@@ -274,11 +373,6 @@ function HistoryArtifact({ artifact, index, copiedKey, onCopy }: { artifact?: Re
       </details>
     </div>
   );
-}
-
-function previousRequest(messages: ChatMessage[], index: number) {
-  for (let cursor = index - 1; cursor >= 0; cursor -= 1) if (messages[cursor].role === "user") return messages[cursor].body;
-  return "No preceding request.";
 }
 
 function projectSnapshot(project: NonNullable<ReturnType<typeof useProjectStore.getState>["activeProject"]>, tracks: TimelineTrack[], pool: ReturnType<typeof useMediaStore.getState>["pool"], components: ReturnType<typeof useComponentStore.getState>["components"], selectedElementId: string | null) {
