@@ -59,6 +59,7 @@ function Element({ element, track, manifest, fps, clippedHeadFrames }: { element
     return <AbsoluteFill style={{ zIndex: numberParam(element.params.zIndex, 0) }}>
       <GeneratedComponentRuntime code={artifact.code} props={{
         ...element.params,
+        params: element.params,
         localTime: (frame + clippedHeadFrames) / fps,
         duration: effectiveDuration(element),
         canvasWidth: manifest.project.settings.width,

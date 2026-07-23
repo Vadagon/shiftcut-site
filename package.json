@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@babel/parser": "7.28.5",
     "@remotion/media": "4.0.496",
     "@remotion/player": "4.0.496",
     "@remotion/web-renderer": "4.0.496",

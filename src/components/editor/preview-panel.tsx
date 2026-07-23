@@ -113,7 +113,7 @@ function Layer({ el, time, playing, selected, onSelect, canvas }: { el: Timeline
       };
       const compatibility = validateGeneratedComponent(artifact.code);
       return <div style={generatedStyle} onMouseDown={onSelect}>
-        {compatibility.compatible ? <GeneratedComponentRuntime code={artifact.code} props={{ ...el.params, localTime: Math.max(0, time - el.startTime), duration: elementEnd(el) - el.startTime, canvasWidth: canvas.width, canvasHeight: canvas.height }} /> : <div className="flex h-full items-center justify-center text-sm text-red-400">Component needs regeneration</div>}
+        {compatibility.compatible ? <GeneratedComponentRuntime code={artifact.code} props={{ ...el.params, params: el.params, localTime: Math.max(0, time - el.startTime), duration: elementEnd(el) - el.startTime, canvasWidth: canvas.width, canvasHeight: canvas.height }} /> : <div className="flex h-full items-center justify-center text-sm text-red-400">Component needs regeneration</div>}
       </div>;
     }
     return <div style={style} onMouseDown={onSelect} className="flex items-center justify-center"><span style={{ color: (p.color as string) ?? "#fff", fontSize: (p.fontSize as number) ?? 48 }}>{(p.text as string) ?? "Text"}</span></div>;

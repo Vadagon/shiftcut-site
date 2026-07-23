@@ -34,6 +34,7 @@ export function Editor({ projectId }: { projectId: string }) {
   const loadForProject = useMediaStore((s) => s.loadForProject);
   const loadComponents = useComponentStore((s) => s.loadForProject);
   const seek = usePlaybackStore((s) => s.seek);
+  const togglePlayback = usePlaybackStore((s) => s.toggle);
   const tracks = useTimelineStore((s) => s.tracks);
   const pool = useMediaStore((s) => s.pool);
   const components = useComponentStore((s) => s.components);
@@ -55,6 +56,18 @@ export function Editor({ projectId }: { projectId: string }) {
     loadForProject(projectId);
     seek(0);
   }, [projectId, loadProject, loadTimeline, loadForProject, loadComponents, seek]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.code !== "Space" || event.repeat || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest("input, textarea, select, button, a, [contenteditable='true'], [role='button']")) return;
+      event.preventDefault();
+      togglePlayback();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [togglePlayback]);
 
   if (loading) return <Center>Loading project…</Center>;
   if (notFound || !activeProject)

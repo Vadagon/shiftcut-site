@@ -43,6 +43,7 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
 }
 
 export function InspectorView() {
+  const [idCopied, setIdCopied] = useState(false);
   const selectedElementId = useTimelineStore((state) => state.selectedElementId);
   const tracks = useTimelineStore((state) => state.tracks);
   const updateParams = useTimelineStore((state) => state.updateElementParams);
@@ -76,12 +77,25 @@ export function InspectorView() {
     const trimEnd = Math.max(0, element.duration - element.trimStart - nextDuration);
     updateTrim(element.id, element.trimStart, trimEnd, element.startTime);
   };
+  const copyElementId = async () => {
+    try {
+      await navigator.clipboard.writeText(element.id);
+      setIdCopied(true);
+      window.setTimeout(() => setIdCopied(false), 1600);
+    } catch {
+      setIdCopied(false);
+    }
+  };
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
       <div className="border-b border-[#d5d2cc] px-4 py-3">
         <div className="text-[13px] font-semibold text-[#292724]">INSPECTOR</div>
         <div className="mt-1 truncate text-[12px] text-[#77736d]">{element.name} · {track.name}</div>
+        <div className="mt-2 flex min-w-0 items-center gap-2">
+          <code className="min-w-0 flex-1 truncate text-[10px] text-[#89857e]" title={element.id}>{element.id}</code>
+          <button type="button" onClick={() => void copyElementId()} className="shrink-0 border border-[#c9c7c2] bg-[#f7f6f4] px-2 py-1 text-[10px] font-medium text-[#56514c] hover:border-[#77736d]">{idCopied ? "ID copied" : "Copy element ID"}</button>
+        </div>
       </div>
 
       <Group title="Timing">

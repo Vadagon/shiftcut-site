@@ -155,8 +155,13 @@ export function Timeline() {
     try { await navigator.clipboard.writeText(JSON.stringify({ type: "shiftcut/timeline-element", element: found.element }, null, 2)); } catch { /* Clipboard access is optional. */ }
   };
 
-  const runContextAction = (action: "delete" | "copy" | "cut" | "inspector", elementId: string) => {
+  const copyElementId = async (elementId: string) => {
+    try { await navigator.clipboard.writeText(elementId); } catch { /* Clipboard access is optional. */ }
+  };
+
+  const runContextAction = (action: "delete" | "copy" | "copy-id" | "cut" | "inspector", elementId: string) => {
     if (action === "copy") void copyElement(elementId);
+    if (action === "copy-id") void copyElementId(elementId);
     if (action === "cut") { void copyElement(elementId); store.getState().removeElement(elementId); }
     if (action === "delete") store.getState().removeElement(elementId);
     if (action === "inspector") { store.getState().selectElement(elementId); usePanelStore.getState().setActive("inspector"); }
@@ -347,8 +352,8 @@ function NewTrackLane({ row, active }: { row: Extract<LaneRow, { kind: "insert" 
   </div>;
 }
 
-function ClipContextMenu({ menu, onAction }: { menu: Exclude<ClipContextMenu, null>; onAction: (action: "delete" | "copy" | "cut" | "inspector", elementId: string) => void }) {
-  const items: Array<["cut" | "copy" | "inspector" | "delete", string, string]> = [["cut", "Cut", "✂"], ["copy", "Copy", "▣"], ["inspector", "Open inspector", "◫"], ["delete", "Delete", "⌫"]];
+function ClipContextMenu({ menu, onAction }: { menu: Exclude<ClipContextMenu, null>; onAction: (action: "delete" | "copy" | "copy-id" | "cut" | "inspector", elementId: string) => void }) {
+  const items: Array<["cut" | "copy" | "copy-id" | "inspector" | "delete", string, string]> = [["cut", "Cut", "✂"], ["copy", "Copy", "▣"], ["copy-id", "Copy element ID", "#"], ["inspector", "Open inspector", "◫"], ["delete", "Delete", "⌫"]];
   return <div role="menu" aria-label={`Actions for ${menu.name}`} onPointerDown={(event) => event.stopPropagation()} className="fixed z-[110] w-44 overflow-hidden border border-[#c9c7c2] bg-[#f7f6f4] py-1 shadow-[0_8px_22px_rgba(0,0,0,.18)]" style={{ left: menu.x, top: menu.y }}>
     {items.map(([action, label, icon]) => <button key={action} type="button" role="menuitem" onClick={() => onAction(action, menu.elementId)} className={`flex w-full items-center gap-3 px-3 py-2 text-left text-[12px] hover:bg-[#e7e4df] ${action === "delete" ? "text-[#bb3c32]" : "text-[#3f3b36]"}`}><span className="w-4 text-center text-[14px]">{icon}</span>{label}</button>)}
   </div>;

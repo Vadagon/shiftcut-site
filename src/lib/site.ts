@@ -18,7 +18,75 @@ export const primaryNav = [
   { label: "Docs", href: "/docs" },
   { label: "Agents", href: "/docs/agents/claude-code" },
   { label: "Studio", href: "/docs/studio" },
-  { label: "API", href: "/docs/api" },
+  { label: "Pricing", href: "/pricing" },
+] as const;
+
+// ── Pricing / plans ───────────────────────────────────────────
+// The editor, local render, and MCP (bring your own agent) are free forever.
+// The only paid feature is the in-editor AI copilot. Billing via Creem.
+export const plans = [
+  {
+    id: "free",
+    name: "Bring your own agent",
+    price: "$0",
+    cadence: "forever",
+    tagline: "Use Codex, Claude, or Gemini — you drive.",
+    cta: "Start free",
+    ctaHref: "/editor",
+    highlight: false,
+    // Not a Creem plan — no checkout.
+    creemPlan: null as null | "monthly" | "yearly",
+    features: [
+      "Full browser editor, timeline & components",
+      "100% local — projects never leave your device",
+      "Client-side MP4 export, unlimited",
+      "MCP access: connect Codex, Claude Code, or Gemini",
+      "Open source, Apache-2.0",
+    ],
+  },
+  {
+    id: "pro-monthly",
+    name: "AI Copilot",
+    price: "$10",
+    cadence: "per month",
+    tagline: "In-editor natural-language editing. Start with 3 days free.",
+    cta: "Start 3-day free trial",
+    ctaHref: null,
+    highlight: true,
+    creemPlan: "monthly" as const,
+    badge: "3 days free · cancel anytime",
+    features: [
+      "Everything in Bring your own agent",
+      "Built-in AI copilot — just type what you want",
+      "No agent or API key of your own required",
+      "Fair-use token allotment each month",
+      "Cancel anytime from the billing portal",
+    ],
+  },
+  {
+    id: "pro-yearly",
+    name: "AI Copilot — Yearly",
+    price: "$60",
+    cadence: "per year",
+    tagline: "Same copilot, ~50% cheaper. Best value.",
+    cta: "Get yearly",
+    ctaHref: null,
+    highlight: false,
+    creemPlan: "yearly" as const,
+    badge: "Save 50%",
+    features: [
+      "Everything in AI Copilot monthly",
+      "Two months free vs. paying monthly",
+      "One yearly payment, cancel anytime",
+    ],
+  },
+] as const;
+
+// Footer / compliance links required for the Creem account review.
+export const legalNav = [
+  { label: "Terms of Service", href: "/legal/terms" },
+  { label: "Privacy Policy", href: "/legal/privacy" },
+  { label: "Refund & Cancellation", href: "/legal/refund" },
 ] as const;
 
 // Agents / surfaces the visitor already uses.

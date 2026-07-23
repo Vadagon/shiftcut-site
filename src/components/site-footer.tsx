@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Mark } from "./logo";
-import { site } from "@/lib/site";
+import { site, legalNav } from "@/lib/site";
 import { GitHubIcon } from "./icons";
 
 const columns = [
@@ -8,7 +8,7 @@ const columns = [
     title: "Product",
     links: [
       { label: "Docs", href: "/docs" },
-      { label: "Quickstart", href: "/docs/quickstart" },
+      { label: "Pricing", href: "/pricing" },
       { label: "Browser Studio", href: "/docs/studio" },
       { label: "Roadmap", href: "/docs/roadmap" },
     ],
@@ -31,13 +31,17 @@ const columns = [
       { label: "Project format", href: "/docs/project-format" },
     ],
   },
+  {
+    title: "Legal",
+    links: [...legalNav],
+  },
 ];
 
 export function SiteFooter() {
   return (
     <footer className="mt-auto border-t border-border">
       <div className="mx-auto max-w-6xl px-5 py-14 sm:px-8">
-        <div className="grid gap-10 md:grid-cols-[1.4fr_repeat(3,1fr)]">
+        <div className="grid gap-10 md:grid-cols-[1.4fr_repeat(4,1fr)]">
           <div>
             <div className="flex items-center gap-2.5">
               <Mark className="h-6 w-6" />
@@ -94,13 +98,16 @@ export function SiteFooter() {
             . Open source · Apache-2.0.
           </p>
           <div className="flex items-center gap-4">
-            <a
-              href={`mailto:${site.contact}`}
-              className="transition-colors hover:text-fg"
-            >
-              {site.contact}
-            </a>
-            <p className="font-mono">Runs on your machine · Free forever</p>
+            <span>
+              Support:{" "}
+              <a
+                href={`mailto:${site.contact}`}
+                className="transition-colors hover:text-fg"
+              >
+                {site.contact}
+              </a>
+            </span>
+            <p className="font-mono">Payments secured by Creem</p>
           </div>
         </div>
       </div>
