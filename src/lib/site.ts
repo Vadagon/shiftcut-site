@@ -212,6 +212,89 @@ export const surfaces = [
   },
 ] as const;
 
+// Concrete capabilities — what the agent actually does to your footage.
+// Each is a real thing you ask for in plain words (mirrors how creators think).
+export const capabilities = [
+  {
+    title: "Finds the best moments",
+    body: "It watches the footage, spots the highlights, and cuts the rambling, dead air, and repeated takes.",
+    tag: "Highlights",
+  },
+  {
+    title: "Captions in 100+ languages",
+    body: "Accurate, styled captions synced to every word — Hormozi-style pop, clean, or your own look.",
+    tag: "Captions",
+  },
+  {
+    title: "Reframes for every platform",
+    body: "One horizontal cut becomes a vertical 9:16 for TikTok, Shorts, and Reels — subject kept in frame.",
+    tag: "Reframe",
+  },
+  {
+    title: "Removes silences & filler",
+    body: "“Cut the ums and the long pauses.” Tighten a talking-head clip without scrubbing the timeline.",
+    tag: "Clean up",
+  },
+  {
+    title: "Turns one video into many",
+    body: "“Make five shorts from this podcast.” Batch a whole channel from a single sentence.",
+    tag: "Repurpose",
+  },
+  {
+    title: "Builds intros & motion graphics",
+    body: "Chapter cards, titles, and animated overlays generated from a description — no keyframing.",
+    tag: "Motion",
+  },
+] as const;
+
+// The wedge vs. cloud editors like ChatCut — what they can't say.
+export const comparison = [
+  {
+    title: "Free, not credit-metered",
+    body: "Bring your own agent and pay $0. No monthly credits to ration, no per-generation meter running.",
+  },
+  {
+    title: "Runs on your machine",
+    body: "Your footage never uploads to someone's cloud. Edit offline, keep raw files and clients private.",
+  },
+  {
+    title: "Open source",
+    body: "Apache-2.0 and yours to keep — inspect it, fork it, self-host it. No lock-in, no black box.",
+  },
+  {
+    title: "Works in the agent you already use",
+    body: "Claude Code, Codex, Cursor, Gemini — or the CLI. Not one more login and subscription.",
+  },
+] as const;
+
+// Home-page FAQ — mirrors the questions a creator comparing tools asks.
+export const homeFaqs = [
+  {
+    q: "What is ShiftCut?",
+    a: "An AI-native video editor you drive by talking to your coding agent. Open a video, describe the edit in plain words, and it does the work — locally, on your machine.",
+  },
+  {
+    q: "Is it really free?",
+    a: "Yes. The editor, local MP4 export, and MCP access are free forever. If you bring your own agent (Codex, Claude Code, Gemini) you pay nothing. The optional built-in AI copilot is $10/mo, or $60/yr with a 3-day free trial.",
+  },
+  {
+    q: "Does my footage get uploaded?",
+    a: "No. ShiftCut runs 100% locally — your files stay on your device. That's the core difference from cloud editors.",
+  },
+  {
+    q: "Which agents does it work with?",
+    a: "Claude Code, Codex, Cursor, and Gemini CLI via one skill, plus a command line for scripts and batch jobs. A visual Browser Studio is on the way.",
+  },
+  {
+    q: "Do I need to know video editing?",
+    a: "No timelines, no keyframes. If you can describe what you want — “add captions,” “make it vertical,” “cut the boring parts” — ShiftCut handles the rest.",
+  },
+  {
+    q: "Can I still edit by hand?",
+    a: "Yes. The upcoming Browser Studio gives you a CapCut-style visual timeline driving the exact same project your agent edits.",
+  },
+] as const;
+
 // Docs sidebar structure.
 export const docsNav = [
   {

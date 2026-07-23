@@ -4,7 +4,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { TerminalDemo } from "@/components/home/terminal-demo";
 import { InstallPicker } from "@/components/home/install-picker";
 import { ArrowIcon, CheckIcon, GitHubIcon } from "@/components/icons";
-import { agents, benefits, examplePrompts, site, steps, surfaces } from "@/lib/site";
+import { agents, benefits, capabilities, comparison, examplePrompts, homeFaqs, plans, site, steps, surfaces } from "@/lib/site";
 
 function Eyebrow({ children }: { children: React.ReactNode }) {
   return (
@@ -50,20 +50,24 @@ export default function Home() {
 
               <div className="mt-8 flex flex-wrap items-center gap-3">
                 <Link
-                  href="/docs/quickstart"
+                  href="/editor"
                   className="inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2.5 text-sm font-medium text-bg transition-colors hover:bg-accent-hover"
                 >
-                  Get started
+                  Open the editor
                   <ArrowIcon className="h-4 w-4" />
                 </Link>
-                <a
-                  href={site.github}
-                  target="_blank"
-                  rel="noreferrer"
+                <Link
+                  href="/docs/agents/claude-code"
                   className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-fg transition-colors hover:border-border-strong"
                 >
-                  View on GitHub
-                </a>
+                  Use in Claude Code
+                </Link>
+                <Link
+                  href="/docs/agents/codex"
+                  className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-fg transition-colors hover:border-border-strong"
+                >
+                  Use in Codex
+                </Link>
               </div>
 
               <div className="mt-7 flex flex-wrap items-center gap-x-5 gap-y-2 font-mono text-xs text-fg-subtle">
@@ -132,6 +136,30 @@ export default function Home() {
                 <span className="hidden shrink-0 rounded-md border border-border px-2 py-0.5 font-mono text-[11px] text-fg-subtle sm:inline">
                   {p.tag}
                 </span>
+              </div>
+            ))}
+          </div>
+        </SectionShell>
+
+        {/* ── Capabilities: what it actually does ─────────────── */}
+        <SectionShell
+          eyebrow="What it does"
+          title="Editing that used to take an afternoon. Now a sentence."
+          lead="ShiftCut watches your footage and does the real work — the same jobs a pro editor does, driven by plain language."
+        >
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {capabilities.map((c) => (
+              <div
+                key={c.title}
+                className="flex flex-col rounded-xl border border-border bg-surface/40 p-5 transition-colors hover:border-border-strong hover:bg-surface"
+              >
+                <div className="flex items-center justify-between">
+                  <h3 className="text-[15px] font-semibold text-fg">{c.title}</h3>
+                  <span className="shrink-0 rounded-md border border-border px-2 py-0.5 font-mono text-[11px] text-fg-subtle">
+                    {c.tag}
+                  </span>
+                </div>
+                <p className="mt-3 text-sm leading-relaxed text-fg-muted">{c.body}</p>
               </div>
             ))}
           </div>
@@ -226,6 +254,76 @@ export default function Home() {
               </Link>
             ))}
           </div>
+        </SectionShell>
+
+        {/* ── The wedge: why not a cloud editor ───────────────── */}
+        <SectionShell
+          eyebrow="Why ShiftCut"
+          title="Everything a cloud editor does — without the cloud, the credits, or the lock-in."
+          lead="Other AI editors upload your footage and charge by the generation. ShiftCut runs on your machine and stays free with your own agent."
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            {comparison.map((c) => (
+              <div
+                key={c.title}
+                className="flex items-start gap-3 rounded-xl border border-border bg-surface/40 p-5"
+              >
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-accent-soft text-accent">
+                  <CheckIcon className="h-3 w-3" />
+                </span>
+                <div>
+                  <h3 className="text-[15px] font-semibold text-fg">{c.title}</h3>
+                  <p className="mt-1.5 text-sm leading-relaxed text-fg-muted">{c.body}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </SectionShell>
+
+        {/* ── Pricing teaser ──────────────────────────────────── */}
+        <SectionShell
+          eyebrow="Pricing"
+          title="Free with your own agent. $10/mo for the built-in copilot."
+          lead="The editor, local export, and MCP access are free forever. Only the in-editor AI copilot is paid."
+        >
+          <div className="grid gap-4 sm:grid-cols-3">
+            {plans.map((plan) => (
+              <div
+                key={plan.id}
+                className={`flex flex-col rounded-xl border p-5 ${
+                  plan.highlight ? "border-accent bg-accent-soft/20" : "border-border bg-surface/40"
+                }`}
+              >
+                <h3 className="text-sm font-semibold text-fg">{plan.name}</h3>
+                <div className="mt-3 flex items-baseline gap-1.5">
+                  <span className="text-2xl font-semibold tracking-tight">{plan.price}</span>
+                  <span className="text-xs text-fg-subtle">{plan.cadence}</span>
+                </div>
+                <p className="mt-2 text-[13px] leading-relaxed text-fg-muted">{plan.tagline}</p>
+              </div>
+            ))}
+          </div>
+          <div className="mt-6">
+            <Link
+              href="/pricing"
+              className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-medium text-fg transition-colors hover:border-border-strong"
+            >
+              See full pricing
+              <ArrowIcon className="h-4 w-4" />
+            </Link>
+          </div>
+        </SectionShell>
+
+        {/* ── FAQ ─────────────────────────────────────────────── */}
+        <SectionShell eyebrow="FAQ" title="Questions, answered.">
+          <dl className="grid gap-x-10 gap-y-8 sm:grid-cols-2">
+            {homeFaqs.map((item) => (
+              <div key={item.q}>
+                <dt className="text-[15px] font-semibold text-fg">{item.q}</dt>
+                <dd className="mt-2 text-sm leading-relaxed text-fg-muted">{item.a}</dd>
+              </div>
+            ))}
+          </dl>
         </SectionShell>
 
         {/* ── Final CTA ───────────────────────────────────────── */}
