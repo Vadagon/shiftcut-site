@@ -10,9 +10,11 @@ import { storageService } from "@/lib/storage/storage-service";
 import type { ChatMemoryData } from "@/lib/storage/types";
 import { uid } from "@/lib/utils";
 import { type TimelineElement, type TimelineTrack } from "@/types/timeline";
+import type { ProjectSettings } from "@/types/project";
 import { serializeCompactProject } from "@/lib/composition-dsl";
 import { parseCompactProject } from "@/lib/composition-dsl-parser";
-import { buildFocusedComponentPrompt, buildTransactionPrompt, parseComponentResult, parseEditorTransaction, simulateTransaction, type ComponentResult, type EditorTransaction } from "@/lib/ai-transaction-protocol";
+import { buildFocusedComponentPrompt, buildTransactionPrompt, parseComponentResult, parseEditorTransaction, simulateTransaction, type ComponentJob, type ComponentResult, type EditorTransaction } from "@/lib/ai-transaction-protocol";
+import { McpAgentSelector } from "./mcp-agent-selector";
 
 type ChatMessage = {
   id: string;
@@ -24,6 +26,22 @@ type ChatMessage = {
   error?: string;
 };
 
+type ProgressStep = {
+  id: string;
+  label: string;
+  status: "pending" | "running" | "complete" | "failed";
+};
+
+type RequestCheckpoint = {
+  revision: number;
+  plan: Extract<EditorTransaction, { type: "editor_transaction" }>;
+  stagedTracks: TimelineTrack[];
+  settings: ProjectSettings;
+  componentJobs: ComponentJob[];
+  componentResults: ComponentResult[];
+  nextComponentIndex: number;
+};
+
 const RECENT_RAW_MESSAGES = 8;
 const COMPACT_AFTER_MESSAGES = 12;
 const COMPACT_AFTER_CHARS = 16_000;
@@ -31,6 +49,10 @@ const MAX_RESPONSE_ATTEMPTS = 3;
 
 function currentTimestamp() {
   return Date.now();
+}
+
+function waitForRetry(milliseconds: number) {
+  return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
 }
 
 function modelMessages(messages: ChatMessage[]) {
@@ -79,6 +101,8 @@ export function AiChat() {
   const [requestPhase, setRequestPhase] = useState<"compacting" | "thinking" | "retrying">("thinking");
   const [workLabel, setWorkLabel] = useState("Analyzing timeline and project");
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [progressOpenId, setProgressOpenId] = useState<string | null>(null);
+  const [copiedErrorId, setCopiedErrorId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const project = useProjectStore((state) => state.activeProject);
   const tracks = useTimelineStore((state) => state.tracks);
@@ -129,11 +153,25 @@ export function AiChat() {
     messagesEndRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
   }, [messages, isSending, retryAttempt]);
 
-  const sendRequest = async (value: string, requestId?: string) => {
+  const sendRequest = async (value: string, requestId?: string, resumeCheckpoint?: RequestCheckpoint) => {
     if (!value || isSending) return;
+    const requestedResolution = extractRequestedResolution(value);
+    if (resumeCheckpoint && requestedResolution
+      && (resumeCheckpoint.settings.width !== requestedResolution.width || resumeCheckpoint.settings.height !== requestedResolution.height)) {
+      resumeCheckpoint = undefined;
+    }
     const animationRequested = /\b(?:animate|animation|explode|explosion|burst|particle|motion|bounce|slide|zoom|transition)\b/i.test(value);
     const requestSnapshot = project ? projectSnapshot(project, tracks, pool, components, selectedElementId, value) : undefined;
     const messageId = requestId ?? uid("msg");
+    let progressSteps: ProgressStep[] = resumeCheckpoint ? readProgress(messages.find((message) => message.id === requestId)?.artifact).map((step) => ({
+      ...step,
+      status: step.status === "failed" ? "running" : step.status,
+    })) : [
+      { id: "context", label: "Prepare project context", status: "running" },
+      { id: "timeline", label: "Plan and validate timeline", status: "pending" },
+      { id: "commit", label: "Apply one atomic revision", status: "pending" },
+    ];
+    let checkpoint = resumeCheckpoint;
     let transportArtifact: Record<string, unknown> = {
       endpoint: "/api/chat",
       method: "POST",
@@ -142,11 +180,16 @@ export function AiChat() {
       requestBody: null,
       response: null,
     };
-    const pendingMessage: ChatMessage = { id: messageId, role: "user", body: value, status: "pending", artifact: { transport: transportArtifact } };
+    const requestArtifact = () => ({ transport: transportArtifact, progress: progressSteps, ...(checkpoint ? { checkpoint } : {}) });
+    const setStep = (id: string, status: ProgressStep["status"]) => {
+      progressSteps = progressSteps.map((step) => step.id === id ? { ...step, status } : step);
+      updateMessage(messageId, { artifact: requestArtifact() });
+    };
+    const pendingMessage: ChatMessage = { id: messageId, role: "user", body: value, status: "pending", artifact: requestArtifact() };
     const requestMessages = requestId
       ? messages.map((message) => message.id === messageId ? { ...message, status: "pending" as const, error: undefined } : message)
       : [...messages, pendingMessage];
-    if (requestId) updateMessage(requestId, { status: "pending", error: undefined, artifact: { transport: transportArtifact } });
+    if (requestId) updateMessage(requestId, { status: "pending", error: undefined, artifact: requestArtifact() });
     else {
       appendMessage(pendingMessage);
     }
@@ -160,6 +203,8 @@ export function AiChat() {
       setWorkLabel("Preparing project context");
       const context = project ? await compactContext(project.id, requestMessages, memory) : { memory, messages: modelMessages(requestMessages), compactionTransport: null };
       if (context.memory !== memory) setMemory(context.memory);
+      setStep("context", "complete");
+      setStep("timeline", "running");
       setRequestPhase("thinking");
       setWorkLabel("Analyzing timeline and project");
       if (!requestSnapshot) throw new Error("No active project composition is available.");
@@ -171,6 +216,9 @@ export function AiChat() {
         selectedElementId: requestSnapshot.selectedElementId,
         suggestedElementId: requestSnapshot.suggestedElementId,
       });
+      // Keep recent raw turns so short follow-ups such as "replace", "yes", or
+      // "make it faster" retain their conversational referent. The system
+      // prompt still makes the current project snapshot authoritative.
       const baseMessages = [{ role: "system" as const, content: systemPrompt }, ...context.messages];
       const attempts: Record<string, unknown>[] = [];
       async function runStage<T>(stage: "timeline" | "component", label: string, stageMessages: Array<{ role: "system" | "user" | "assistant"; content: string }>, accept: (raw: string) => T): Promise<T> {
@@ -188,7 +236,7 @@ export function AiChat() {
             auxiliaryRequests: context.compactionTransport ? [context.compactionTransport] : [],
             response: { attempts: [...attempts], activeStage: stage, activeAttempt: attempt },
           };
-          updateMessage(messageId, { artifact: { transport: transportArtifact } });
+          updateMessage(messageId, { artifact: requestArtifact() });
           const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(requestBody) });
           const responseBody = await response.json().catch(() => null) as { content?: unknown; error?: unknown; upstream?: unknown } | null;
           const attemptRecord: Record<string, unknown> = {
@@ -210,7 +258,7 @@ export function AiChat() {
               const accepted = accept(rawContent);
               attemptRecord.acceptance = { passed: true };
               transportArtifact = { ...transportArtifact, response: { attempts: [...attempts], activeStage: null, activeAttempt: null } };
-              updateMessage(messageId, { artifact: { transport: transportArtifact } });
+              updateMessage(messageId, { artifact: requestArtifact() });
               return accepted;
             } catch (error) {
               lastAcceptanceError = error instanceof Error ? error.message : "The returned JSX failed client acceptance.";
@@ -218,23 +266,77 @@ export function AiChat() {
               retryMessages = [
                 ...stageMessages,
                 ...(rawContent ? [{ role: "assistant" as const, content: rawContent }] : []),
-                { role: "user" as const, content: `Client ${stage} acceptance failed: ${lastAcceptanceError} Return a corrected response using the required root and exact identifiers only.` },
+                { role: "user" as const, content: `Client ${stage} validation failed: ${lastAcceptanceError} Return exactly one valid JSON object matching the required schema. Do not include prose or Markdown.` },
               ];
             }
           }
           transportArtifact = { ...transportArtifact, response: { attempts: [...attempts], activeStage: stage, activeAttempt: null } };
-          updateMessage(messageId, { artifact: { transport: transportArtifact } });
+          updateMessage(messageId, { artifact: requestArtifact() });
+          if (attempt < MAX_RESPONSE_ATTEMPTS) {
+            setWorkLabel(response.ok ? `${label} · correcting response` : `${label} · provider failed, retrying`);
+            await waitForRetry(attempt * 750);
+          }
         }
-        throw new Error(`The AI ${stage} response failed acceptance after ${MAX_RESPONSE_ATTEMPTS} attempts: ${lastAcceptanceError}`);
+        throw new Error(`The AI ${stage} response failed after ${MAX_RESPONSE_ATTEMPTS} total attempts: ${lastAcceptanceError}`);
       }
 
-      const plan = await runStage("timeline", "Planning editor transaction", baseMessages, (raw) => parseEditorTransaction(raw, requestSnapshot.revision));
-      let stagedTracks = structuredClone(tracks);
-      const componentResults: ComponentResult[] = [];
-      if (plan.type === "editor_transaction") {
-        const simulation = simulateTransaction({ transaction: plan, tracks, assets: pool, fps: requestSnapshot.settings.fps });
-        stagedTracks = simulation.tracks;
+      if (checkpoint && checkpoint.revision !== requestSnapshot.revision) {
+        throw new Error("The project revision changed after this request failed. Retry the complete request against the current project.");
+      }
+      const planned = checkpoint
+        ? { plan: checkpoint.plan, simulation: { tracks: checkpoint.stagedTracks, componentJobs: checkpoint.componentJobs, settings: checkpoint.settings } }
+        : await runStage("timeline", "Planning editor transaction", baseMessages, (raw) => {
+          const plan = parseEditorTransaction(raw, requestSnapshot.revision);
+          if (/\b(?:all|everything|complete|entire|full)\b/i.test(value)
+            && plan.type === "editor_transaction"
+            && /\b(?:next steps?|would add|add later|placeholder|follow[- ]?up)\b/i.test(`${plan.summary} ${plan.reply}`)) {
+            throw new Error("The user requested the complete job, but the plan deferred requested work to a later step.");
+          }
+          const simulation = plan.type === "editor_transaction"
+            ? simulateTransaction({ transaction: plan, tracks, assets: pool, settings: requestSnapshot.settings })
+            : null;
+          if (simulation && requestedResolution && (simulation.settings.width !== requestedResolution.width || simulation.settings.height !== requestedResolution.height)) {
+            throw new Error(`The user requested ${requestedResolution.width}×${requestedResolution.height}, but the transaction canvas remains ${simulation.settings.width}×${simulation.settings.height}. Add update_project_settings as the first operation.`);
+          }
+          if (plan.type === "editor_transaction" && simulation
+            && simulation.componentJobs.length === 0
+            && sameTimeline(tracks, simulation.tracks)
+            && JSON.stringify(requestSnapshot.settings) === JSON.stringify(simulation.settings)) {
+            throw new Error("The transaction is a no-op. Return no_changes with a useful clarification question, or return operations that materially change the current project.");
+          }
+          return { plan, simulation };
+        });
+      const { plan } = planned;
+      setStep("timeline", "complete");
+      const stagedTracks = planned.simulation?.tracks ?? structuredClone(tracks);
+      const componentResults: ComponentResult[] = checkpoint ? [...checkpoint.componentResults] : [];
+      if (plan.type === "editor_transaction" && planned.simulation) {
+        const simulation = planned.simulation;
+        if (!checkpoint) {
+          const componentSteps: ProgressStep[] = simulation.componentJobs.map((job, index) => ({
+            id: `component:${index}`,
+            label: `${job.kind === "edit" ? "Update" : "Generate"} component ${index + 1}/${simulation.componentJobs.length}`,
+            status: "pending",
+          }));
+          progressSteps = [
+            ...progressSteps.filter((step) => step.id !== "commit"),
+            ...componentSteps,
+            progressSteps.find((step) => step.id === "commit")!,
+          ];
+          checkpoint = {
+            revision: requestSnapshot.revision,
+            plan,
+            stagedTracks,
+            settings: simulation.settings,
+            componentJobs: simulation.componentJobs,
+            componentResults: [],
+            nextComponentIndex: 0,
+          };
+        }
+        updateMessage(messageId, { artifact: requestArtifact() });
         for (const [jobIndex, job] of simulation.componentJobs.entries()) {
+          if (jobIndex < (checkpoint?.nextComponentIndex ?? 0)) continue;
+          setStep(`component:${jobIndex}`, "running");
           const revisionBeforeFocus = useProjectStore.getState().activeProject?.revision;
           if (revisionBeforeFocus !== requestSnapshot.revision) throw new Error("The project changed before component generation. Retry with the current revision.");
           const original = tracks.flatMap((track) => track.elements).find((element) => element.id === job.elementId);
@@ -245,9 +347,9 @@ export function AiChat() {
             job,
             artifact,
             element: original,
-            projectWidth: requestSnapshot.settings.width,
-            projectHeight: requestSnapshot.settings.height,
-            fps: requestSnapshot.settings.fps,
+            projectWidth: simulation.settings.width,
+            projectHeight: simulation.settings.height,
+            fps: simulation.settings.fps,
           });
           const generated = await runStage(
             "component",
@@ -256,9 +358,12 @@ export function AiChat() {
             (raw) => parseComponentResult(raw, { expectedRevision: requestSnapshot.revision, elementId: job.elementId, requireAnimation: animationRequested }),
           );
           componentResults.push(generated);
+          if (checkpoint) checkpoint = { ...checkpoint, componentResults: [...componentResults], nextComponentIndex: jobIndex + 1 };
+          setStep(`component:${jobIndex}`, "complete");
         }
       }
       transportArtifact = { ...transportArtifact, response: { attempts: [...attempts], finalResult: { plan, componentResults }, completedAt: currentTimestamp() } };
+      setStep("commit", "running");
       setWorkLabel("Applying accepted changes");
       setRequestPhase("thinking");
       setRetryAttempt(null);
@@ -266,13 +371,14 @@ export function AiChat() {
       const currentRevision = useProjectStore.getState().activeProject?.revision;
       const revisionMatches = currentRevision !== undefined && plan.expectedRevision === currentRevision;
       const applied = revisionMatches && plan.type === "editor_transaction"
-        ? commitTransaction(plan, stagedTracks, componentResults)
+        ? commitTransaction(plan, stagedTracks, componentResults, planned.simulation?.settings ?? requestSnapshot.settings)
         : [];
       if (plan.type === "editor_transaction" && !applied.length) throw new Error(revisionMatches
         ? "The accepted transaction produced no project change. Nothing was changed."
         : "The project changed while AI was responding. Nothing was changed; retry with the current revision.");
       const resultingTimeline = timelineContext(useTimelineStore.getState().tracks, useComponentStore.getState().components, true);
-      updateMessage(messageId, { status: "complete", error: undefined, artifact: { transport: transportArtifact, editorResult: { receivedAtRevision: currentRevision ?? null, revisionMatches, applied, timelineAfter: resultingTimeline } } });
+      progressSteps = progressSteps.map((step) => ({ ...step, status: "complete" as const }));
+      updateMessage(messageId, { status: "complete", error: undefined, artifact: { ...requestArtifact(), editorResult: { receivedAtRevision: currentRevision ?? null, revisionMatches, applied, timelineAfter: resultingTimeline } } });
       appendMessage({ id: uid("msg"), role: "assistant", body: reply, tools: applied.length ? `Applied: ${applied.join(", ")}` : undefined, artifact: {
         transport: transportArtifact,
         request: requestSnapshot,
@@ -280,9 +386,10 @@ export function AiChat() {
       } });
     } catch (error) {
       const message = error instanceof Error ? error.message : "AI response failed.";
+      progressSteps = progressSteps.map((step) => step.status === "running" ? { ...step, status: "failed" } : step);
       const priorResponse = asRecord(transportArtifact.response);
       transportArtifact = { ...transportArtifact, response: { ...priorResponse, error: message, completedAt: currentTimestamp() } };
-      updateMessage(messageId, { status: "failed", error: message, artifact: { transport: transportArtifact } });
+      updateMessage(messageId, { status: "failed", error: message, artifact: requestArtifact() });
     } finally {
       setIsSending(false);
       setRetryAttempt(null);
@@ -296,27 +403,78 @@ export function AiChat() {
     void sendRequest(draft.trim());
   };
 
+  const copyErrorDebugLog = async (request: ChatMessage) => {
+    const requestIndex = messages.findIndex((message) => message.id === request.id);
+    const response = messages.find((message, index) => index > requestIndex && message.role === "assistant");
+    const currentProject = useProjectStore.getState().activeProject;
+    const currentTracks = useTimelineStore.getState().tracks;
+    const currentComponents = useComponentStore.getState().components;
+    const currentAssets = useMediaStore.getState().pool;
+    const payload = buildDebugLog({
+      messages,
+      request,
+      response,
+      level: "full",
+      runtime: { pageUrl: window.location.href, userAgent: navigator.userAgent, language: navigator.language, online: navigator.onLine },
+      editorState: {
+        project: currentProject,
+        selectedElementId: useTimelineStore.getState().selectedElementId,
+        timelineWithComponentCode: timelineContext(currentTracks, currentComponents, true),
+        componentRegistry: Object.values(currentComponents),
+        assets: currentAssets.map((asset) => ({ id: asset.id, name: asset.name, kind: asset.kind, mime: asset.mime, duration: asset.duration, width: asset.width, height: asset.height, size: asset.size })),
+      },
+    });
+    await navigator.clipboard.writeText(`# ShiftCut full debug error\n\n${JSON.stringify(payload, null, 2)}`);
+    setCopiedErrorId(request.id);
+    window.setTimeout(() => setCopiedErrorId(null), 1600);
+  };
+
   return (
-    <aside className="relative flex h-full min-h-0 flex-col bg-[#edebe8] text-[#302e2b]">
+    <aside className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-[#edebe8] text-[#302e2b]">
       <div className="flex h-10 shrink-0 items-center justify-between border-b border-[#c9c7c2] px-4 text-[12px] font-semibold tracking-[0.02em]">
         <span>AI</span>
         <button type="button" title="Request history" aria-label="Request history" onClick={() => setHistoryOpen((open) => !open)} className="flex h-7 w-7 items-center justify-center text-[16px] font-normal text-[#69655f] hover:bg-[#e2dfdb] hover:text-[#292724]">▤</button>
       </div>
       {historyOpen && <HistoryDrawer messages={messages} onClose={() => setHistoryOpen(false)} />}
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-6">
-        <div className="space-y-6">
-          {messages.map((message) => (
-            <div key={message.id} className={message.role === "user" ? "flex justify-end" : "max-w-full"}>
-              <div className={message.role === "user" ? "max-w-[88%] rounded-[3px] bg-[#e1dfdc] px-3 py-2 text-[13px] leading-5 text-[#292724]" : "text-[15px] leading-[1.55] text-[#252320]"}>
-                {message.tools && <div className="mb-2 flex items-center gap-2 text-[12px] text-[#807d78]"><span className="h-2 w-2 rounded-full bg-[#438d58]" />{message.tools}</div>}
-                <MessageText content={message.body} />
-                {message.role === "user" && message.status && message.status !== "complete" && <div className="mt-2 flex items-center justify-between gap-3 border-t border-[#c9c7c2] pt-2 text-[10px] text-[#77726c]">
-                  <span className={message.status === "failed" ? "text-[#b64132]" : undefined}>{message.status === "failed" ? `Failed: ${message.error ?? "No response"}` : statusText(workLabel, requestPhase, retryAttempt)}</span>
-                  <button type="button" disabled={isSending} onClick={() => void sendRequest(message.body, message.id)} className="font-semibold text-[#57524c] underline underline-offset-2 hover:text-[#292724] disabled:opacity-50">Retry</button>
-                </div>}
+      <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-5 py-6">
+        <div className="min-w-0 space-y-6">
+          {messages.map((message) => {
+            const progress = readProgress(message.artifact);
+            const progressOpen = progressOpenId === message.id;
+            return (
+              <div key={message.id} className={`flex min-w-0 max-w-full ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+                <div className={`min-w-0 max-w-[88%] overflow-hidden rounded-[3px] px-3 py-2 text-[13px] leading-5 text-[#292724] ${message.role === "user" ? "bg-[#e1dfdc]" : "border border-[#d4d1cc] bg-[#f7f6f4]"}`}>
+                  {message.tools && <div className="mb-2 flex items-center gap-2 text-[12px] text-[#807d78]"><span className="h-2 w-2 rounded-full bg-[#438d58]" />{message.tools}</div>}
+                  <MessageText content={message.body} />
+                  {message.role === "user" && message.status && message.status !== "complete" && (
+                    <>
+                      <div className="mt-2 flex items-center justify-between gap-3 border-t border-[#c9c7c2] pt-2 text-[10px] text-[#77726c]">
+                        <span className={`flex min-w-0 items-start gap-2 ${message.status === "failed" ? "text-[#b64132]" : ""}`}>
+                          {message.status === "failed" && (
+                            <button type="button" title={copiedErrorId === message.id ? "Debug error copied" : "Copy full debug error"} aria-label="Copy full debug error" onClick={() => void copyErrorDebugLog(message)} className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded border border-[#c7c3bd] bg-[#efede9] text-[#6c6761] hover:border-[#9d9891] hover:bg-[#e6e3de] hover:text-[#34312e]">
+                              {copiedErrorId === message.id ? "✓" : <BugIcon />}
+                            </button>
+                          )}
+                          <span>{message.status === "failed" ? `Failed: ${message.error ?? "No response"}` : statusText(workLabel, requestPhase, retryAttempt)}</span>
+                        </span>
+                        <span className="flex shrink-0 items-center gap-3">
+                          <button type="button" onClick={() => setProgressOpenId(progressOpen ? null : message.id)} className="whitespace-nowrap font-semibold text-[#57524c] underline underline-offset-2 hover:text-[#292724]">{progressOpen ? "Hide progress" : "Show progress"}</button>
+                        </span>
+                      </div>
+                      {progressOpen && <RequestProgress steps={progress} retryDisabled={isSending} onRetry={(stepId) => {
+                        if (!stepId) return;
+                        // A failed final commit means the accepted checkpoint
+                        // itself was stale or ineffective. Replan instead of
+                        // replaying the same commit forever.
+                        const savedCheckpoint = stepId === "commit" ? undefined : readCheckpoint(message.artifact);
+                        void sendRequest(message.body, message.id, savedCheckpoint);
+                      }} />}
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {isSending && <ThinkingIndicator retryAttempt={retryAttempt} phase={requestPhase} workLabel={workLabel} />}
           <div ref={messagesEndRef} />
         </div>
@@ -324,7 +482,7 @@ export function AiChat() {
       <div className="shrink-0 px-5 pb-4 pt-2">
         <div className="mb-2 text-[10px] text-[#827d76]">Project revision {project?.revision ?? "—"} · synced automatically</div>
         <form onSubmit={submit} className="relative rounded-[5px] border border-[#c9c7c2] bg-[#f8f7f5] p-3 shadow-[0_1px_2px_rgba(0,0,0,.04)]">
-          <span title="Coming soon: connect Codex, Claude, or Gemini through MCP. Free to use with your own AI connection." className="absolute right-3 top-3 inline-flex items-center gap-1.5 py-1 text-[10px] font-semibold text-[#aaa69f]"><i className="h-1.5 w-1.5 rounded-full bg-[#aaa69f]" />MCP · soon</span>
+          <McpAgentSelector placement="above" compact />
           <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => {
             if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
               event.preventDefault();
@@ -342,11 +500,64 @@ export function AiChat() {
 
 function MessageText({ content }: { content: string }) {
   return (
-    <p className="whitespace-pre-wrap">
-      {content.split(/(\*\*[^*]+\*\*)/g).map((part, index) => part.startsWith("**") && part.endsWith("**")
-        ? <strong key={index} className="font-semibold">{part.slice(2, -2)}</strong>
-        : part)}
-    </p>
+    <div className="max-w-full overflow-x-auto overscroll-x-contain">
+      <p className="w-full min-w-0 whitespace-pre-wrap break-normal">
+        {content.split(/(\*\*[^*]+\*\*)/g).map((part, index) => part.startsWith("**") && part.endsWith("**")
+          ? <strong key={index} className="font-semibold">{part.slice(2, -2)}</strong>
+          : part)}
+      </p>
+    </div>
+  );
+}
+
+function BugIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="m8 2 1.9 2.4M16 2l-1.9 2.4M3 13h4M17 13h4M5 7l2.2 1.5M19 7l-2.2 1.5M5 19l2.4-1.6M19 19l-2.4-1.6" />
+      <rect x="7" y="5" width="10" height="16" rx="5" />
+      <path d="M7 11h10M12 11v10" />
+    </svg>
+  );
+}
+
+function readProgress(artifact?: Record<string, unknown>): ProgressStep[] {
+  if (!Array.isArray(artifact?.progress)) return [];
+  return artifact.progress.flatMap((value) => {
+    const step = asRecord(value);
+    if (!step || typeof step.id !== "string" || typeof step.label !== "string") return [];
+    if (step.status !== "pending" && step.status !== "running" && step.status !== "complete" && step.status !== "failed") return [];
+    return [{ id: step.id, label: step.label, status: step.status }];
+  });
+}
+
+function readCheckpoint(artifact?: Record<string, unknown>): RequestCheckpoint | undefined {
+  const checkpoint = asRecord(artifact?.checkpoint);
+  const plan = asRecord(checkpoint?.plan);
+  if (!checkpoint || plan?.type !== "editor_transaction" || typeof checkpoint.revision !== "number") return undefined;
+  const settings = asRecord(checkpoint.settings);
+  if (!settings || typeof settings.width !== "number" || typeof settings.height !== "number" || typeof settings.fps !== "number") return undefined;
+  if (!Array.isArray(checkpoint.stagedTracks) || !Array.isArray(checkpoint.componentJobs) || !Array.isArray(checkpoint.componentResults) || typeof checkpoint.nextComponentIndex !== "number") return undefined;
+  return checkpoint as unknown as RequestCheckpoint;
+}
+
+function RequestProgress({ steps, retryDisabled, onRetry }: { steps: ProgressStep[]; retryDisabled: boolean; onRetry: (stepId: string) => void }) {
+  return (
+    <div className="mt-2 space-y-1.5 border-t border-[#c9c7c2] pt-2">
+      {steps.map((step) => (
+        <div key={step.id} className="flex items-center gap-2 text-[10px] text-[#68635d]">
+          <span className={`flex h-3 w-3 shrink-0 items-center justify-center rounded-full text-[8px] ${
+            step.status === "complete" ? "bg-[#4d8f5d] text-white"
+              : step.status === "running" ? "animate-pulse border border-[#8b867f] bg-[#f5f3f0]"
+                : step.status === "failed" ? "bg-[#b64132] text-white"
+                  : "border border-[#bbb7b0]"
+          }`}>{step.status === "complete" ? "✓" : step.status === "failed" ? "!" : ""}</span>
+          <span className={step.status === "pending" ? "text-[#99948d]" : undefined}>{step.label}</span>
+          {step.status !== "failed" && <span className="ml-auto text-[9px] capitalize text-[#99948d]">{step.status}</span>}
+          {step.status === "failed" && <span className="ml-auto" />}
+          {step.status === "failed" && <button type="button" disabled={retryDisabled} onClick={() => onRetry(step.id)} className="text-[9px] font-semibold text-[#57524c] underline underline-offset-2 disabled:opacity-40">Retry</button>}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -829,6 +1040,12 @@ function projectSnapshot(project: NonNullable<ReturnType<typeof useProjectStore.
   };
 }
 
+function extractRequestedResolution(request: string) {
+  const match = request.match(/\b(?:resolution|canvas|video\s+size|output\s+size)\b[^0-9]{0,40}(\d{2,4})\s*[x×]\s*(\d{2,4})/i);
+  if (!match) return null;
+  return { width: Number(match[1]), height: Number(match[2]) };
+}
+
 function timelineContext(tracks: TimelineTrack[], components: ReturnType<typeof useComponentStore.getState>["components"], includeCode = false) {
   return tracks.map((track) => ({
     id: track.id,
@@ -854,7 +1071,7 @@ function timelineContext(tracks: TimelineTrack[], components: ReturnType<typeof 
   }));
 }
 
-function commitTransaction(plan: Extract<EditorTransaction, { type: "editor_transaction" }>, stagedTracks: TimelineTrack[], componentResults: ComponentResult[]) {
+function commitTransaction(plan: Extract<EditorTransaction, { type: "editor_transaction" }>, stagedTracks: TimelineTrack[], componentResults: ComponentResult[], settings: ProjectSettings) {
   const store = useTimelineStore.getState();
   const next = structuredClone(stagedTracks);
   for (const result of componentResults) {
@@ -877,14 +1094,19 @@ function commitTransaction(plan: Extract<EditorTransaction, { type: "editor_tran
     target.componentVersion = artifact.version;
     target.name = target.name || artifact.name;
   }
-  if (sameTimeline(store.tracks, next)) return [];
-  store.replaceTimeline(next, plan.summary);
+  const activeProject = useProjectStore.getState().activeProject;
+  const settingsChanged = Boolean(activeProject) && JSON.stringify(activeProject!.settings) !== JSON.stringify(settings);
+  const timelineChanged = !sameTimeline(store.tracks, next);
+  if (!timelineChanged && !settingsChanged) return [];
+  if (settingsChanged) useProjectStore.getState().setSettingsForCommit(settings);
+  if (timelineChanged) store.replaceTimeline(next, plan.summary);
+  else useProjectStore.getState().bumpRevision();
   const selected = componentResults.at(-1)?.elementId;
   if (selected) {
     store.selectElement(selected);
     usePanelStore.getState().setActive("inspector");
   }
-  return [`transaction: ${plan.operations.length} operation${plan.operations.length === 1 ? "" : "s"}`];
+  return [`transaction: ${plan.operations.length} operation${plan.operations.length === 1 ? "" : "s"}${settingsChanged ? ` · ${settings.width}×${settings.height}` : ""}`];
 }
 
 function sameTimeline(left: TimelineTrack[], right: TimelineTrack[]) {

@@ -13,6 +13,7 @@ import { Timeline } from "./timeline";
 import { I } from "./icons";
 import { AiChat } from "./ai-chat";
 import { ExportDialog } from "./export-dialog";
+import { McpAgentSelector } from "./mcp-agent-selector";
 
 const MIN_CHAT_WIDTH = 260;
 const MIN_ASSETS_WIDTH = 260;
@@ -138,7 +139,7 @@ export function Editor({ projectId }: { projectId: string }) {
             <button title="History" className="rounded-lg p-2 text-[#4e4a45] hover:bg-[#efedea]">◴</button>
             <button type="button" onClick={() => setLayoutOpen((open) => !open)} title="Panels" aria-expanded={layoutOpen} className="rounded-lg p-2 text-[#4e4a45] hover:bg-[#efedea]">⊞</button>
             {layoutOpen && <PanelVisibilityMenu visiblePanels={visiblePanels} onToggle={(panel) => setVisiblePanels((current) => ({ ...current, [panel]: !current[panel] }))} />}
-            <McpStatus />
+            <McpAgentSelector />
             <button type="button" onClick={() => setExportOpen(true)} className="rounded-[4px] border border-[#c65d2d] bg-[#e57438] px-5 py-2 text-[13px] font-semibold text-white shadow-[inset_0_1px_rgba(255,255,255,.35)] hover:bg-[#d96930]">Export</button>
             <span className="border-l border-[#d2cfca] pl-3 text-[13px] font-semibold text-[#56524d]">✣ 4.6</span><span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#d7b49d] text-[11px] font-semibold text-white">S</span>
           </div>
@@ -168,10 +169,6 @@ function PanelSeparator({ onPointerDown }: { onPointerDown: (event: React.Pointe
 
 function TimelineSeparator({ onPointerDown }: { onPointerDown: (event: React.PointerEvent<HTMLDivElement>) => void }) {
   return <div aria-label="Resize timeline" role="separator" aria-orientation="horizontal" onPointerDown={onPointerDown} className="group z-20 flex h-[4px] shrink-0 touch-none cursor-row-resize items-center bg-transparent hover:bg-[#cecdc9]/20"><span className="h-px w-full bg-[#cecdc9] group-hover:bg-[#aaa9a5]" /></div>;
-}
-
-function McpStatus() {
-  return <span title="Coming soon: connect Codex, Claude, or Gemini through MCP. It will be free with your own AI connection." className="inline-flex items-center gap-1.5 whitespace-nowrap text-[10px] font-semibold text-[#8d8982]"><i className="h-1.5 w-1.5 rounded-full bg-[#aaa69f]" />MCP · soon</span>;
 }
 
 function PanelVisibilityMenu({ visiblePanels, onToggle }: { visiblePanels: Record<"chat" | "assets" | "viewer" | "timeline", boolean>; onToggle: (panel: "chat" | "assets" | "viewer" | "timeline") => void }) {

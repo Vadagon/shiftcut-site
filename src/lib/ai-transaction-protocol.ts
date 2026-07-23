@@ -2,12 +2,14 @@ import { validateGeneratedComponentSource } from "@/lib/generated-component-cont
 import { uid } from "@/lib/utils";
 import { canPlaceElementOnTrack, elementEnd, type ElementParams, type TimelineElement, type TimelineTrack, type TrackType } from "@/types/timeline";
 import type { ComponentArtifact, MediaFileData } from "@/lib/storage/types";
+import type { ProjectSettings } from "@/types/project";
 
 export const SHIFT_CUT_TRANSACTION_PROTOCOL = "shiftcut-ai-transaction/v1";
 
 type JsonRecord = Record<string, unknown>;
 
 export type EditorOperation =
+  | { type: "update_project_settings"; patch: { width?: number; height?: number; fps?: number; background?: string } }
   | { type: "create_track"; temporaryId: string; trackType: "visual" | "audio"; name?: string; position?: number }
   | { type: "delete_track"; trackId: string }
   | { type: "delete_element"; elementId: string }
@@ -65,6 +67,7 @@ Response:
 }
 
 Allowed operations:
+- {"type":"update_project_settings","patch":{"width":1080,"height":1920,"fps":30,"background":"#000000"}}
 - {"type":"create_track","temporaryId":"new:overlay","trackType":"visual|audio","name":"Overlay","position":0}
 - {"type":"delete_track","trackId":"existing-track-id"}
 - {"type":"delete_element","elementId":"existing-element-id"}
@@ -79,9 +82,15 @@ For questions or ambiguity:
 
 Rules:
 - A request may contain many operations. Put all of them in one transaction.
+- When the user explicitly requests a resolution, aspect ratio, frame rate, or background, include update_project_settings before layout operations and design every coordinate against those resulting settings.
+- Resolve short follow-ups such as "yes", "replace", "do it", or "make it faster" from the recent conversation.
+- Conversation history is context for user intent only. The Current project below is the sole authority for what actually exists and what edits have already been applied.
 - Use update_element/move_element for timing, duration, trims, placement, text, transform, color, and volume.
 - Use edit_component only for rendering structure or animation code.
 - Use create_component only when the user explicitly asks to add a new visual.
+- Add audio assets only to audio tracks. Add image and video assets only to visual tracks.
+- A video already carries its own audio; do not duplicate a video asset onto an audio track.
+- Complete every requested operation in this transaction. Never defer requested work as "next steps", create empty placeholder tracks, or claim unfinished work was completed.
 - For a broad restructure, use create/delete/move/update operations together. Delete empty/unneeded tracks only when requested.
 - Never echo componentId, componentVersion, project settings, or component source.
 - Never overlap elements in one track.
@@ -107,12 +116,16 @@ export function parseEditorTransaction(source: string, expectedRevision: number)
   }
   if (type !== "editor_transaction") throw new Error("type must be editor_transaction or no_changes.");
   if (!Array.isArray(value.operations) || value.operations.length < 1 || value.operations.length > 40) throw new Error("editor_transaction requires 1-40 operations.");
+  const operations = value.operations.map((operation, index) => parseOperation(operation, index));
+  const settingsIndex = operations.findIndex((operation) => operation.type === "update_project_settings");
+  if (settingsIndex > 0) throw new Error("update_project_settings must be the first operation.");
+  if (operations.filter((operation) => operation.type === "update_project_settings").length > 1) throw new Error("Only one update_project_settings operation is allowed.");
   return {
     type,
     expectedRevision,
     summary: requiredString(value.summary, "summary"),
     reply: requiredString(value.reply, "reply"),
-    operations: value.operations.map((operation, index) => parseOperation(operation, index)),
+    operations,
   };
 }
 
@@ -120,22 +133,29 @@ export function simulateTransaction(input: {
   transaction: Extract<EditorTransaction, { type: "editor_transaction" }>;
   tracks: TimelineTrack[];
   assets: MediaFileData[];
-  fps: number;
+  settings: ProjectSettings;
 }) {
   const tracks = structuredClone(input.tracks);
+  const settings = { ...input.settings };
   const jobs: ComponentJob[] = [];
   const trackAliases = new Map<string, string>();
-  const frame = (value: number) => Math.round(value * input.fps) / input.fps;
+  const elementAliases = new Map<string, string>();
+  const frame = (value: number) => Math.round(value * settings.fps) / settings.fps;
   const resolveTrack = (id: string) => trackAliases.get(id) ?? id;
   const find = (elementId: string) => {
+    const resolvedId = elementAliases.get(elementId) ?? elementId;
     for (const track of tracks) {
-      const index = track.elements.findIndex((element) => element.id === elementId);
+      const index = track.elements.findIndex((element) => element.id === resolvedId);
       if (index >= 0) return { track, index, element: track.elements[index] };
     }
     return null;
   };
 
   for (const operation of input.transaction.operations) {
+    if (operation.type === "update_project_settings") {
+      Object.assign(settings, operation.patch);
+      continue;
+    }
     if (operation.type === "create_track") {
       if (trackAliases.has(operation.temporaryId) || tracks.some((track) => track.id === operation.temporaryId)) throw new Error(`Duplicate temporary track ID ${operation.temporaryId}.`);
       const id = uid("track");
@@ -178,7 +198,7 @@ export function simulateTransaction(input: {
         ...found.element,
         ...(patch.name ? { name: patch.name } : {}),
         ...(patch.startTime !== undefined ? { startTime: frame(nonNegative(patch.startTime)) } : {}),
-        ...(patch.duration !== undefined ? { duration: framePositive(patch.duration, input.fps) } : {}),
+        ...(patch.duration !== undefined ? { duration: framePositive(patch.duration, settings.fps) } : {}),
         ...(patch.trimStart !== undefined ? { trimStart: frame(nonNegative(patch.trimStart)) } : {}),
         ...(patch.trimEnd !== undefined ? { trimEnd: frame(nonNegative(patch.trimEnd)) } : {}),
         ...(patch.params ? { params: { ...found.element.params, ...cleanParams(patch.params) } } : {}),
@@ -194,7 +214,7 @@ export function simulateTransaction(input: {
       const element: TimelineElement = {
         id: uid("el"), type: "media", mediaId: asset.id, name: asset.name, component,
         startTime: frame(nonNegative(operation.startTime)),
-        duration: framePositive(operation.duration ?? asset.duration ?? 5, input.fps),
+        duration: framePositive(operation.duration ?? asset.duration ?? 5, settings.fps),
         trimStart: 0, trimEnd: 0, params: defaults(),
       };
       if (!canPlaceElementOnTrack(element, track)) throw new Error(`Media ${operation.mediaId} is incompatible with track ${operation.trackId}.`);
@@ -204,17 +224,19 @@ export function simulateTransaction(input: {
     if (operation.type === "edit_component") {
       const found = find(operation.elementId);
       if (!found?.element.componentId) throw new Error(`Element ${operation.elementId} is not an AI component.`);
-      jobs.push({ kind: "edit", elementId: operation.elementId, instruction: operation.instruction });
+      jobs.push({ kind: "edit", elementId: found.element.id, instruction: operation.instruction });
       continue;
     }
     const trackId = resolveTrack(operation.trackId);
     const track = tracks.find((item) => item.id === trackId);
     if (!track || track.type !== "media") throw new Error(`New component requires a visual track: ${operation.trackId}.`);
+    if (elementAliases.has(operation.temporaryElementId)) throw new Error(`Duplicate temporary element ID ${operation.temporaryElementId}.`);
     const elementId = uid("el");
+    elementAliases.set(operation.temporaryElementId, elementId);
     jobs.push({
       kind: "create", elementId, instruction: operation.instruction, trackId,
       name: operation.name, startTime: frame(nonNegative(operation.startTime)),
-      duration: framePositive(operation.duration, input.fps), params: cleanParams(operation.params ?? {}),
+      duration: framePositive(operation.duration, settings.fps), params: cleanParams(operation.params ?? {}),
     });
     track.elements.push({
       id: elementId,
@@ -222,14 +244,15 @@ export function simulateTransaction(input: {
       name: operation.name,
       component: "GeneratedReactComponent",
       startTime: frame(nonNegative(operation.startTime)),
-      duration: framePositive(operation.duration, input.fps),
+      duration: framePositive(operation.duration, settings.fps),
       trimStart: 0,
       trimEnd: 0,
       params: { ...defaults(), ...cleanParams(operation.params ?? {}) },
     });
   }
-  validateTimeline(tracks);
-  return { tracks, componentJobs: jobs };
+  const expandedTracks = expandOverlappingLanes(tracks);
+  validateTimeline(expandedTracks);
+  return { tracks: expandedTracks, componentJobs: jobs, settings };
 }
 
 export function buildFocusedComponentPrompt(input: {
@@ -292,6 +315,18 @@ function parseOperation(value: unknown, index: number): EditorOperation {
   const item = record(value);
   if (!item || typeof item.type !== "string") throw new Error(`Operation ${index + 1} requires a type.`);
   switch (item.type) {
+    case "update_project_settings": {
+      const patch = record(item.patch);
+      if (!patch) throw new Error(`Operation ${index + 1} update_project_settings requires patch.`);
+      const width = finite(patch.width) ? Math.round(Number(patch.width)) : undefined;
+      const height = finite(patch.height) ? Math.round(Number(patch.height)) : undefined;
+      const fps = finite(patch.fps) ? Math.round(Number(patch.fps)) : undefined;
+      const background = optionalString(patch.background);
+      if (width === undefined && height === undefined && fps === undefined && !background) throw new Error(`Operation ${index + 1} update_project_settings requires at least one setting.`);
+      if ((width !== undefined && (width < 16 || width > 8192)) || (height !== undefined && (height < 16 || height > 8192))) throw new Error("Project dimensions must be between 16 and 8192 pixels.");
+      if (fps !== undefined && (fps < 1 || fps > 120)) throw new Error("Project fps must be between 1 and 120.");
+      return { type: item.type, patch: { ...(width !== undefined ? { width } : {}), ...(height !== undefined ? { height } : {}), ...(fps !== undefined ? { fps } : {}), ...(background ? { background } : {}) } };
+    }
     case "create_track": return { type: item.type, temporaryId: newId(item.temporaryId, "temporaryId"), trackType: item.trackType === "audio" ? "audio" : "visual", ...(optionalString(item.name) ? { name: optionalString(item.name) } : {}), ...(finite(item.position) ? { position: Number(item.position) } : {}) };
     case "delete_track": return { type: item.type, trackId: requiredString(item.trackId, "trackId") };
     case "delete_element": return { type: item.type, elementId: requiredString(item.elementId, "elementId") };
@@ -332,6 +367,32 @@ function validateTimeline(tracks: TimelineTrack[]) {
       end = elementEnd(element);
     }
   }
+}
+
+/**
+ * AI plans describe visual layers, while the timeline stores one
+ * non-overlapping lane per track. Expand intentional overlaps into adjacent
+ * tracks. Later overlapping elements are inserted above earlier ones so the
+ * operation order also becomes the visual stacking order.
+ */
+function expandOverlappingLanes(tracks: TimelineTrack[]) {
+  return tracks.flatMap((track) => {
+    if (track.elements.length < 2) return [track];
+    const lanes: TimelineElement[][] = [];
+    for (const element of track.elements) {
+      const lane = lanes.find((items) => items.every((item) => element.startTime >= elementEnd(item) - 0.001 || elementEnd(element) <= item.startTime + 0.001));
+      if (lane) lane.push(element);
+      else lanes.push([element]);
+    }
+    if (lanes.length === 1) return [{ ...track, elements: [...lanes[0]].sort((a, b) => a.startTime - b.startTime) }];
+    const rows = lanes.map((elements, index): TimelineTrack => ({
+      ...track,
+      id: index === 0 ? track.id : uid("track"),
+      name: index === 0 ? track.name : `${track.name} ${index + 1}`,
+      elements: [...elements].sort((a, b) => a.startTime - b.startTime),
+    }));
+    return track.type === "audio" ? rows : [...rows.slice(1).reverse(), rows[0]];
+  });
 }
 
 function parseJsonObject(source: string) {

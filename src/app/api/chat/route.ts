@@ -5,7 +5,10 @@ export const runtime = "nodejs";
 
 type ProxyMessage = { role: "system" | "user" | "assistant"; content: string };
 
-const OPENROUTER_TIMEOUT_MS = 60_000;
+// Full-completion deadlines. A provider may start generating quickly while a
+// large structured JSON response still needs significantly longer to finish.
+const PLANNER_TIMEOUT_MS = 180_000;
+const COMPONENT_TIMEOUT_MS = 180_000;
 const MAX_MESSAGES = 48;
 const MAX_TOTAL_CHARACTERS = 600_000;
 
@@ -48,8 +51,9 @@ export async function POST(request: Request) {
     }
   }
 
+  const timeoutMs = isComponentPrompt ? COMPONENT_TIMEOUT_MS : PLANNER_TIMEOUT_MS;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), OPENROUTER_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const upstream = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
@@ -64,22 +68,38 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         model: process.env.OPENROUTER_MODEL ?? "deepseek/deepseek-v4-flash",
         messages: body.messages,
+        response_format: { type: "json_object" },
         temperature: 0.25,
-        max_completion_tokens: 32_768,
+        max_completion_tokens: isComponentPrompt ? 8_192 : 16_384,
       }),
     });
-    const result = await upstream.json().catch(() => null) as {
-      id?: string;
-      model?: string;
-      choices?: Array<{
-        finish_reason?: string | null;
-        native_finish_reason?: string | null;
-        message?: { content?: unknown; reasoning?: unknown };
-      }>;
-      usage?: Record<string, unknown>;
-      error?: { message?: string; code?: unknown; metadata?: unknown };
-      openrouter_metadata?: unknown;
-    } | null;
+    let responseText: string;
+    try {
+      responseText = await upstream.text();
+    } catch (error) {
+      if (controller.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
+        return NextResponse.json({ error: `The AI response timed out after ${timeoutMs / 1000} seconds.` }, { status: 504 });
+      }
+      return NextResponse.json({ error: "Could not read the OpenRouter response body." }, { status: 502 });
+    }
+    const result = (() => {
+      try {
+        return JSON.parse(responseText) as {
+          id?: string;
+          model?: string;
+          choices?: Array<{
+            finish_reason?: string | null;
+            native_finish_reason?: string | null;
+            message?: { content?: unknown; reasoning?: unknown };
+          }>;
+          usage?: Record<string, unknown>;
+          error?: { message?: string; code?: unknown; metadata?: unknown };
+          openrouter_metadata?: unknown;
+        };
+      } catch {
+        return null;
+      }
+    })();
     if (!upstream.ok) {
       return NextResponse.json({
         error: result?.error?.message ?? "OpenRouter request failed.",
@@ -93,10 +113,23 @@ export async function POST(request: Request) {
       : Array.isArray(rawContent)
         ? rawContent.flatMap((part) => part && typeof part === "object" && "text" in part && typeof part.text === "string" ? [part.text] : []).join("")
         : "";
+    if (!choice || !content.trim()) {
+      return NextResponse.json({
+        error: result?.error?.message
+          ?? (!responseText.trim()
+            ? "OpenRouter returned an empty response body."
+            : !result
+              ? "OpenRouter returned a non-JSON response body."
+              : !choice
+                ? "OpenRouter returned no completion choice."
+                : "OpenRouter returned an empty completion."),
+        upstream: diagnostic(result),
+      }, { status: 502 });
+    }
     return NextResponse.json({ content: content.trim(), upstream: diagnostic(result) });
   } catch (error) {
     const timedOut = error instanceof Error && error.name === "AbortError";
-    return NextResponse.json({ error: timedOut ? "The AI response timed out after 60 seconds." : "OpenRouter request failed." }, { status: timedOut ? 504 : 502 });
+    return NextResponse.json({ error: timedOut ? `The AI response timed out after ${timeoutMs / 1000} seconds.` : "OpenRouter request failed." }, { status: timedOut ? 504 : 502 });
   } finally {
     clearTimeout(timeout);
   }

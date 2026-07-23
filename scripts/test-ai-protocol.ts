@@ -25,33 +25,35 @@ const transaction = parseEditorTransaction(JSON.stringify({
   summary: "Restructured opening",
   reply: "Done",
   operations: [
+    { type: "update_project_settings", patch: { width: 1080, height: 1920, fps: 30 } },
     { type: "create_track", temporaryId: "new:overlay", trackType: "visual", name: "Overlay", position: 0 },
     { type: "move_element", elementId: "title-1", trackId: "new:overlay", startTime: 1 },
     { type: "update_element", elementId: "title-1", patch: { duration: 5, params: { text: "New" } } },
     { type: "update_element", elementId: "video-1", patch: { duration: 6 } },
     { type: "delete_track", trackId: "v-empty" },
     { type: "edit_component", elementId: "title-1", instruction: "Make it explode at 3 seconds" },
+    { type: "create_component", temporaryElementId: "new:badge", trackId: "new:overlay", name: "Badge", startTime: 6, duration: 2, params: { text: "NEW" }, instruction: "Create an animated badge" },
+    { type: "update_element", elementId: "new:badge", patch: { duration: 3 } },
   ],
 }), 7);
 
 if (transaction.type !== "editor_transaction") throw new Error("Transaction was not parsed.");
-const simulation = simulateTransaction({ transaction, tracks, assets: [{ id: "media-1", name: "Video", kind: "video", mime: "video/mp4", size: 1, duration: 8, createdAt: 0 }], fps: 30 });
+const simulation = simulateTransaction({ transaction, tracks, assets: [{ id: "media-1", name: "Video", kind: "video", mime: "video/mp4", size: 1, duration: 8, createdAt: 0 }], settings: { width: 1920, height: 1080, fps: 30 } });
 const title = simulation.tracks.flatMap((track) => track.elements).find((element) => element.id === "title-1");
 if (!title || title.startTime !== 1 || title.duration !== 5 || title.params.text !== "New") throw new Error("Compound transaction simulation failed.");
 if (simulation.tracks.some((track) => track.id === "v-empty")) throw new Error("Empty track was not deleted.");
-if (simulation.componentJobs.length !== 1 || simulation.componentJobs[0].elementId !== "title-1") throw new Error("Component job was not staged.");
+if (simulation.componentJobs.length !== 2 || simulation.componentJobs[0].elementId !== "title-1") throw new Error("Component jobs were not staged.");
+if (simulation.settings.width !== 1080 || simulation.settings.height !== 1920) throw new Error("Project settings were not staged.");
+const badge = simulation.tracks.flatMap((track) => track.elements).find((element) => element.name === "Badge");
+if (!badge || badge.duration !== 3) throw new Error("Temporary element ID was not resolved.");
 
-let overlapRejected = false;
-try {
-  const invalid = parseEditorTransaction(JSON.stringify({
-    type: "editor_transaction", expectedRevision: 7, summary: "Bad", reply: "Bad",
-    operations: [{ type: "move_element", elementId: "title-1", trackId: "v1", startTime: 1 }],
-  }), 7);
-  if (invalid.type === "editor_transaction") simulateTransaction({ transaction: invalid, tracks, assets: [], fps: 30 });
-} catch {
-  overlapRejected = true;
-}
-if (!overlapRejected) throw new Error("Overlapping transaction was accepted.");
+const overlapPlan = parseEditorTransaction(JSON.stringify({
+  type: "editor_transaction", expectedRevision: 7, summary: "Layered", reply: "Layered",
+  operations: [{ type: "move_element", elementId: "title-1", trackId: "v1", startTime: 1 }],
+}), 7);
+if (overlapPlan.type !== "editor_transaction") throw new Error("Overlap plan failed.");
+const expanded = simulateTransaction({ transaction: overlapPlan, tracks, assets: [], settings: { width: 1920, height: 1080, fps: 30 } });
+if (expanded.tracks.length !== tracks.length + 1) throw new Error("Intentional overlap did not create an adjacent lane.");
 
 const component = parseComponentResult(JSON.stringify({
   type: "component_result",
@@ -69,6 +71,7 @@ console.log(JSON.stringify({
   protocol: "JSON transaction",
   compoundOperations: "simulated atomically",
   temporaryTrackIds: "resolved",
-  overlap: "rejected",
+  projectSettings: "staged atomically",
+  overlap: "expanded into adjacent lane",
   focusedComponent: "accepted",
 }));

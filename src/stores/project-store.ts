@@ -18,6 +18,7 @@ interface ProjectStore {
   createProject: (name?: string) => Promise<TProject>;
   rename: (name: string) => void;
   updateSettings: (patch: Partial<ProjectSettings>) => void;
+  setSettingsForCommit: (settings: ProjectSettings) => void;
   bumpRevision: () => TProject | null; // called after any mutation
 }
 
@@ -64,6 +65,14 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     if (!p) return;
     set({ activeProject: { ...p, settings: { ...p.settings, ...patch } } });
     get().bumpRevision();
+  },
+
+  // Used by atomic cross-store transactions. The timeline commit performs the
+  // single revision bump after both settings and tracks are staged.
+  setSettingsForCommit: (settings) => {
+    const p = get().activeProject;
+    if (!p) return;
+    set({ activeProject: { ...p, settings: { ...settings } } });
   },
 
   bumpRevision: () => {
