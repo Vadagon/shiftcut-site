@@ -5,7 +5,7 @@ import type { TimelineElement, TimelineTrack } from "@/types/timeline";
 export const SHIFT_CUT_PROJECT_FORMAT = "shiftcut-project/v2";
 
 type CompactProjectInput = {
-  project: { name: string; revision: number; settings: ProjectSettings };
+  project: { name: string; revision: number; settings: ProjectSettings; compositionDescription?: string };
   tracks: TimelineTrack[];
   components: Record<string, ComponentArtifact>;
   assets: MediaFileData[];
@@ -40,7 +40,7 @@ function elementTag(element: TimelineElement) {
   return "Text";
 }
 
-function serializeElement(element: TimelineElement, fps: number) {
+function serializeElement(element: TimelineElement, fps: number, trackName: string, components: Record<string, ComponentArtifact>) {
   const tag = elementTag(element);
   const identity = element.componentId
     ? ` componentId=${stringAttribute(element.componentId)} componentVersion={${element.componentVersion ?? 1}}`
@@ -51,7 +51,10 @@ function serializeElement(element: TimelineElement, fps: number) {
   const trimStart = Math.min(frameTime(element.trimStart, fps), Math.max(0, duration - 1 / fps));
   const trimEnd = Math.min(frameTime(element.trimEnd, fps), Math.max(0, duration - trimStart - 1 / fps));
   const params = Object.entries(element.params).map(([name, value]) => parameterAttribute(name, value)).join("");
-  return `      <${tag} elementId=${stringAttribute(element.id)} name=${stringAttribute(element.name)}${identity} start={${frameTime(element.startTime, fps)}} duration={${duration}} trimStart={${trimStart}} trimEnd={${trimEnd}}${params} />`;
+  const artifact = element.componentId ? components[element.componentId] : undefined;
+  const description = element.description?.trim() || artifact?.description || `${element.name} ${tag.toLowerCase()} element.`;
+  const purpose = element.purpose?.trim() || `Contributes ${element.name} to the ${trackName} layer.`;
+  return `      <${tag} elementId=${stringAttribute(element.id)} name=${stringAttribute(element.name)} description=${stringAttribute(description)} purpose=${stringAttribute(purpose)}${identity} start={${frameTime(element.startTime, fps)}} duration={${duration}} trimStart={${trimStart}} trimEnd={${trimEnd}}${params} />`;
 }
 
 export function serializeCompactProject({ project, tracks, components, assets }: CompactProjectInput) {
@@ -69,11 +72,12 @@ export function serializeCompactProject({ project, tracks, components, assets }:
   const trackRows = tracks.map((track) => {
     const tag = track.type === "audio" ? "AudioTrack" : "VisualTrack";
     return `    <${tag} id=${stringAttribute(track.id)} name=${stringAttribute(track.name)} muted={${track.muted}} hidden={${track.hidden}} locked={${track.locked}}>
-${track.elements.map((element) => serializeElement(element, fps)).join("\n")}
+${track.elements.map((element) => serializeElement(element, fps, track.name, components)).join("\n")}
     </${tag}>`;
   }).join("\n");
   const { width, height, background = "#000000" } = project.settings;
-  return `<ShiftCutProject format=${stringAttribute(SHIFT_CUT_PROJECT_FORMAT)} name=${stringAttribute(project.name)} revision={${project.revision}} width={${width}} height={${height}} fps={${fps}} background=${stringAttribute(background)}>
+  const compositionDescription = project.compositionDescription?.trim() || "A video composition whose durable creative description has not been written yet.";
+  return `<ShiftCutProject format=${stringAttribute(SHIFT_CUT_PROJECT_FORMAT)} name=${stringAttribute(project.name)} description=${stringAttribute(compositionDescription)} revision={${project.revision}} width={${width}} height={${height}} fps={${fps}} background=${stringAttribute(background)}>
   <Assets>
 ${assetRows}
   </Assets>

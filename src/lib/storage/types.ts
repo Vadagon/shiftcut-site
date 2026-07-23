@@ -12,6 +12,7 @@ export interface StorageConfig {
 export interface SerializedProject {
   id: string;
   name: string;
+  compositionDescription?: string;
   revision: number;
   settings: ProjectSettings;
   createdAt: number;

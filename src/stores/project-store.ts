@@ -19,6 +19,7 @@ interface ProjectStore {
   rename: (name: string) => void;
   updateSettings: (patch: Partial<ProjectSettings>) => void;
   setSettingsForCommit: (settings: ProjectSettings) => void;
+  setCompositionDescriptionForCommit: (description: string) => void;
   bumpRevision: () => TProject | null; // called after any mutation
 }
 
@@ -43,6 +44,7 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const p: TProject = {
       id: uid("proj"),
       name,
+      compositionDescription: "An empty video composition awaiting media and editing direction.",
       revision: 0,
       settings: { ...DEFAULT_SETTINGS },
       createdAt: now,
@@ -73,6 +75,12 @@ export const useProjectStore = create<ProjectStore>((set, get) => ({
     const p = get().activeProject;
     if (!p) return;
     set({ activeProject: { ...p, settings: { ...settings } } });
+  },
+
+  setCompositionDescriptionForCommit: (description) => {
+    const p = get().activeProject;
+    if (!p) return;
+    set({ activeProject: { ...p, compositionDescription: description.trim() } });
   },
 
   bumpRevision: () => {

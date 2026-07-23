@@ -10,6 +10,8 @@ export interface ProjectSettings {
 export interface TProject {
   id: string;
   name: string;
+  /** Durable, model-facing explanation of the complete composition. */
+  compositionDescription?: string;
   revision: number; // monotonic; +1 on every mutation (ShiftCut contract, see PRD)
   settings: ProjectSettings;
   createdAt: number;

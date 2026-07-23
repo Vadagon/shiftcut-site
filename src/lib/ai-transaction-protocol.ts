@@ -14,14 +14,14 @@ export type EditorOperation =
   | { type: "delete_track"; trackId: string }
   | { type: "delete_element"; elementId: string }
   | { type: "move_element"; elementId: string; trackId: string; startTime: number }
-  | { type: "update_element"; elementId: string; patch: { name?: string; startTime?: number; duration?: number; trimStart?: number; trimEnd?: number; params?: JsonRecord } }
-  | { type: "add_media"; mediaId: string; trackId: string; startTime: number; duration?: number }
+  | { type: "update_element"; elementId: string; patch: { name?: string; description?: string; purpose?: string; startTime?: number; duration?: number; trimStart?: number; trimEnd?: number; params?: JsonRecord } }
+  | { type: "add_media"; mediaId: string; trackId: string; startTime: number; duration?: number; description?: string; purpose?: string }
   | { type: "edit_component"; elementId: string; instruction: string }
-  | { type: "create_component"; temporaryElementId: string; trackId: string; name: string; startTime: number; duration: number; params?: JsonRecord; instruction: string };
+  | { type: "create_component"; temporaryElementId: string; trackId: string; name: string; description?: string; purpose?: string; startTime: number; duration: number; params?: JsonRecord; instruction: string };
 
 export type EditorTransaction =
   | { type: "no_changes"; expectedRevision: number; reply: string; operations: [] }
-  | { type: "editor_transaction"; expectedRevision: number; summary: string; reply: string; operations: EditorOperation[] };
+  | { type: "editor_transaction"; expectedRevision: number; summary: string; compositionDescription: string; reply: string; operations: EditorOperation[] };
 
 export type ComponentJob = {
   kind: "edit" | "create";
@@ -32,6 +32,8 @@ export type ComponentJob = {
   startTime?: number;
   duration?: number;
   params?: JsonRecord;
+  description?: string;
+  purpose?: string;
 };
 
 export type ComponentResult = {
@@ -63,6 +65,7 @@ Response:
   "type": "editor_transaction",
   "expectedRevision": ${input.revision},
   "summary": "short revision summary",
+  "compositionDescription": "complete, self-contained description of the resulting video's concept, structure, layout, timing, and purpose",
   "reply": "short user-facing result",
   "operations": [...]
 }
@@ -73,17 +76,21 @@ Allowed operations:
 - {"type":"delete_track","trackId":"existing-track-id"}
 - {"type":"delete_element","elementId":"existing-element-id"}
 - {"type":"move_element","elementId":"existing-element-id","trackId":"existing-or-temporary-track-id","startTime":2}
-- {"type":"update_element","elementId":"existing-element-id","patch":{"name":"Title","startTime":0,"duration":5,"text":"New","x":540,"width":1080}}
-- {"type":"add_media","mediaId":"existing-media-id","trackId":"existing-or-temporary-track-id","startTime":0,"duration":5}
+- {"type":"update_element","elementId":"existing-element-id","patch":{"name":"Title","description":"Animated sale title","purpose":"Establishes the offer at the opening","startTime":0,"duration":5,"text":"New","x":540,"width":1080}}
+- {"type":"add_media","mediaId":"existing-media-id","trackId":"existing-or-temporary-track-id","startTime":0,"duration":5,"description":"Portrait reaction clip","purpose":"Provides the full-screen background for round one"}
 - {"type":"edit_component","elementId":"existing-component-element-id","instruction":"precise visual/code change"}
-- {"type":"create_component","temporaryElementId":"new:title","trackId":"existing-or-temporary-track-id","name":"Title","startTime":0,"duration":5,"params":{"text":"Sale","x":540,"y":960},"instruction":"precise visual/code request"}
+- {"type":"create_component","temporaryElementId":"new:title","trackId":"existing-or-temporary-track-id","name":"Title","description":"Animated sale title","purpose":"Communicates the opening offer","startTime":0,"duration":5,"params":{"text":"Sale","x":540,"y":960},"instruction":"precise visual/code request"}
 
 For questions or ambiguity:
 {"type":"no_changes","expectedRevision":${input.revision},"reply":"question","operations":[]}
 
 Contract:
 - A request may contain many operations. Put all of them in one transaction.
-- If the user's latest instruction is incomplete or does not identify a material change, return no_changes with one concise clarification question. Never invent a no-op transaction.
+- Treat outcome-level instructions as authorization to inspect the current project, choose reasonable implementation details, and perform the work. The user does not need to prescribe individual operations.
+- Every editor_transaction must rewrite compositionDescription so it accurately and completely describes the resulting composition without relying on chat history.
+- Keep each affected element's description (what it is) and purpose (why it exists) accurate. These are durable project documentation, not user-facing status text.
+- Ask a clarification only when missing information makes every reasonable edit unsafe or impossible. Preference choices and multiple viable designs are not blockers; use professional judgment and proceed.
+- If the user's latest message asks for information rather than an edit, or a required external fact is genuinely unavailable, return no_changes with a concise answer or blocking question. Never invent a no-op transaction.
 - Infer intent from the latest request, recent conversation, recent project changes, and current project together. Do not ask for facts already available in that context.
 - The Current project is authoritative for what exists now. Recent project changes explain how it reached that state; conversation explains the user's intent.
 - Use update_project_settings when project settings must change. It must be first.
@@ -107,6 +114,15 @@ Current project:
 ${input.compactProject}`;
 }
 
+/**
+ * Distinguishes editor commands from ordinary conversation. This is purposely
+ * broad: it recognizes mutation intent, while the planner decides the concrete
+ * operations from project context.
+ */
+export function requestsProjectMutation(request: string) {
+  return /\b(?:add|adapt|adjust|apply|arrange|build|change|compose|create|cut|delete|edit|fix|generate|improve|make|move|rebuild|recompose|reflow|regenerate|remove|replace|resize|restructure|restyle|rewrite|scale|split|trim|update)\b/i.test(request);
+}
+
 export function parseEditorTransaction(source: string, expectedRevision: number): EditorTransaction {
   const value = parseJsonObject(source);
   const type = value.type;
@@ -125,6 +141,7 @@ export function parseEditorTransaction(source: string, expectedRevision: number)
     type,
     expectedRevision,
     summary: requiredString(value.summary, "summary"),
+    compositionDescription: requiredString(value.compositionDescription, "compositionDescription"),
     reply: requiredString(value.reply, "reply"),
     operations,
   };
@@ -198,6 +215,8 @@ export function simulateTransaction(input: {
       found.track.elements[found.index] = {
         ...found.element,
         ...(patch.name ? { name: patch.name } : {}),
+        ...(patch.description ? { description: patch.description } : {}),
+        ...(patch.purpose ? { purpose: patch.purpose } : {}),
         ...(patch.startTime !== undefined ? { startTime: frame(nonNegative(patch.startTime)) } : {}),
         ...(patch.duration !== undefined ? { duration: framePositive(patch.duration, settings.fps) } : {}),
         ...(patch.trimStart !== undefined ? { trimStart: frame(nonNegative(patch.trimStart)) } : {}),
@@ -214,6 +233,8 @@ export function simulateTransaction(input: {
       const component = asset.kind === "audio" ? "AudioPlayer" : asset.kind === "video" ? "VideoPlayer" : "ImagePlayer";
       const element: TimelineElement = {
         id: uid("el"), type: "media", mediaId: asset.id, name: asset.name, component,
+        ...(operation.description ? { description: operation.description } : {}),
+        ...(operation.purpose ? { purpose: operation.purpose } : {}),
         startTime: frame(nonNegative(operation.startTime)),
         duration: framePositive(operation.duration ?? asset.duration ?? 5, settings.fps),
         trimStart: 0, trimEnd: 0, params: defaults(),
@@ -237,12 +258,15 @@ export function simulateTransaction(input: {
     jobs.push({
       kind: "create", elementId, instruction: operation.instruction, trackId,
       name: operation.name, startTime: frame(nonNegative(operation.startTime)),
+      description: operation.description, purpose: operation.purpose,
       duration: framePositive(operation.duration, settings.fps), params: cleanParams(operation.params ?? {}),
     });
     track.elements.push({
       id: elementId,
       type: "text",
       name: operation.name,
+      ...(operation.description ? { description: operation.description } : {}),
+      ...(operation.purpose ? { purpose: operation.purpose } : {}),
       component: "GeneratedReactComponent",
       startTime: frame(nonNegative(operation.startTime)),
       duration: framePositive(operation.duration, settings.fps),
@@ -336,11 +360,13 @@ function parseOperation(value: unknown, index: number): EditorOperation {
       const patch = record(item.patch);
       if (!patch || Object.keys(patch).length === 0) throw new Error(`Operation ${index + 1} update_element requires patch.`);
       if ("params" in patch && !record(patch.params)) throw new Error(`Operation ${index + 1} update_element params must be an object.`);
-      const structuralKeys = new Set(["name", "startTime", "duration", "trimStart", "trimEnd", "params"]);
+      const structuralKeys = new Set(["name", "description", "purpose", "startTime", "duration", "trimStart", "trimEnd", "params"]);
       const directParams = Object.fromEntries(Object.entries(patch).filter(([key]) => !structuralKeys.has(key)));
       const params = { ...(record(patch.params) ?? {}), ...directParams };
       const normalized = {
         ...(optionalString(patch.name) ? { name: optionalString(patch.name) } : {}),
+        ...(optionalString(patch.description) ? { description: optionalString(patch.description) } : {}),
+        ...(optionalString(patch.purpose) ? { purpose: optionalString(patch.purpose) } : {}),
         ...(finite(patch.startTime) ? { startTime: Number(patch.startTime) } : {}),
         ...(finite(patch.duration) ? { duration: Number(patch.duration) } : {}),
         ...(finite(patch.trimStart) ? { trimStart: Number(patch.trimStart) } : {}),
@@ -350,9 +376,9 @@ function parseOperation(value: unknown, index: number): EditorOperation {
       if (Object.keys(normalized).length === 0) throw new Error(`Operation ${index + 1} update_element contains no usable changes.`);
       return { type: item.type, elementId: requiredString(item.elementId, "elementId"), patch: normalized };
     }
-    case "add_media": return { type: item.type, mediaId: requiredString(item.mediaId, "mediaId"), trackId: requiredString(item.trackId, "trackId"), startTime: requiredNumber(item.startTime, "startTime"), ...(finite(item.duration) ? { duration: Number(item.duration) } : {}) };
+    case "add_media": return { type: item.type, mediaId: requiredString(item.mediaId, "mediaId"), trackId: requiredString(item.trackId, "trackId"), startTime: requiredNumber(item.startTime, "startTime"), ...(finite(item.duration) ? { duration: Number(item.duration) } : {}), ...(optionalString(item.description) ? { description: optionalString(item.description) } : {}), ...(optionalString(item.purpose) ? { purpose: optionalString(item.purpose) } : {}) };
     case "edit_component": return { type: item.type, elementId: requiredString(item.elementId, "elementId"), instruction: requiredString(item.instruction, "instruction") };
-    case "create_component": return { type: item.type, temporaryElementId: newId(item.temporaryElementId, "temporaryElementId"), trackId: requiredString(item.trackId, "trackId"), name: requiredString(item.name, "name"), startTime: requiredNumber(item.startTime, "startTime"), duration: requiredNumber(item.duration, "duration"), ...(record(item.params) ? { params: record(item.params)! } : {}), instruction: requiredString(item.instruction, "instruction") };
+    case "create_component": return { type: item.type, temporaryElementId: newId(item.temporaryElementId, "temporaryElementId"), trackId: requiredString(item.trackId, "trackId"), name: requiredString(item.name, "name"), ...(optionalString(item.description) ? { description: optionalString(item.description) } : {}), ...(optionalString(item.purpose) ? { purpose: optionalString(item.purpose) } : {}), startTime: requiredNumber(item.startTime, "startTime"), duration: requiredNumber(item.duration, "duration"), ...(record(item.params) ? { params: record(item.params)! } : {}), instruction: requiredString(item.instruction, "instruction") };
     default: throw new Error(`Unsupported operation ${item.type}.`);
   }
 }

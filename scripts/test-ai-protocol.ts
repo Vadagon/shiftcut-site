@@ -1,4 +1,4 @@
-import { parseComponentResult, parseEditorTransaction, simulateTransaction } from "../src/lib/ai-transaction-protocol";
+import { parseComponentResult, parseEditorTransaction, requestsProjectMutation, simulateTransaction } from "../src/lib/ai-transaction-protocol";
 import type { TimelineTrack } from "../src/types/timeline";
 
 const tracks: TimelineTrack[] = [
@@ -19,17 +19,21 @@ const tracks: TimelineTrack[] = [
   },
 ];
 
+if (!requestsProjectMutation("analyze and recompose the video")) throw new Error("Outcome-level edit request was not recognized.");
+if (requestsProjectMutation("what is the current resolution?")) throw new Error("Information request was incorrectly classified as an edit.");
+
 const transaction = parseEditorTransaction(JSON.stringify({
   type: "editor_transaction",
   expectedRevision: 7,
   summary: "Restructured opening",
+  compositionDescription: "A six-second opening with a background video, updated title, and animated badge.",
   reply: "Done",
   operations: [
     { type: "update_project_settings", patch: { width: 1080, height: 1920, fps: 30 } },
     { type: "create_track", temporaryId: "new:overlay", trackType: "visual", name: "Overlay", position: 0 },
     { type: "move_element", elementId: "title-1", trackId: "new:overlay", startTime: 1 },
     { type: "update_element", elementId: "title-1", patch: { duration: 5, params: { text: "New" } } },
-    { type: "update_element", elementId: "video-1", patch: { duration: 6, width: 1080, height: 1920 } },
+    { type: "update_element", elementId: "video-1", patch: { description: "Portrait background video", purpose: "Establishes the opening scene", duration: 6, width: 1080, height: 1920 } },
     { type: "delete_track", trackId: "v-empty" },
     { type: "edit_component", elementId: "title-1", instruction: "Make it explode at 3 seconds" },
     { type: "create_component", temporaryElementId: "new:badge", trackId: "new:overlay", name: "Badge", startTime: 6, duration: 2, params: { text: "NEW" }, instruction: "Create an animated badge" },
@@ -43,6 +47,7 @@ const title = simulation.tracks.flatMap((track) => track.elements).find((element
 if (!title || title.startTime !== 1 || title.duration !== 5 || title.params.text !== "New") throw new Error("Compound transaction simulation failed.");
 const video = simulation.tracks.flatMap((track) => track.elements).find((element) => element.id === "video-1");
 if (!video || video.params.width !== 1080 || video.params.height !== 1920) throw new Error("Flat visual properties were not normalized into element params.");
+if (video.description !== "Portrait background video" || video.purpose !== "Establishes the opening scene") throw new Error("Element documentation was not preserved.");
 if (simulation.tracks.some((track) => track.id === "v-empty")) throw new Error("Empty track was not deleted.");
 if (simulation.componentJobs.length !== 2 || simulation.componentJobs[0].elementId !== "title-1") throw new Error("Component jobs were not staged.");
 if (simulation.settings.width !== 1080 || simulation.settings.height !== 1920) throw new Error("Project settings were not staged.");
@@ -50,7 +55,7 @@ const badge = simulation.tracks.flatMap((track) => track.elements).find((element
 if (!badge || badge.duration !== 3) throw new Error("Temporary element ID was not resolved.");
 
 const overlapPlan = parseEditorTransaction(JSON.stringify({
-  type: "editor_transaction", expectedRevision: 7, summary: "Layered", reply: "Layered",
+  type: "editor_transaction", expectedRevision: 7, summary: "Layered", compositionDescription: "A layered title over the opening video.", reply: "Layered",
   operations: [{ type: "move_element", elementId: "title-1", trackId: "v1", startTime: 1 }],
 }), 7);
 if (overlapPlan.type !== "editor_transaction") throw new Error("Overlap plan failed.");
@@ -71,10 +76,12 @@ if (component.type !== "component_result") throw new Error("Component result fai
 
 console.log(JSON.stringify({
   protocol: "JSON transaction",
+  outcomeCommands: "require an editor transaction",
   compoundOperations: "simulated atomically",
   temporaryTrackIds: "resolved",
   projectSettings: "staged atomically",
   flatElementProperties: "normalized into live params",
+  durableCompositionContext: "serialized with element purpose",
   overlap: "expanded into adjacent lane",
   focusedComponent: "accepted",
 }));

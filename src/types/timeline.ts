@@ -30,6 +30,10 @@ export interface TimelineElement {
   type: "media" | "text";
   mediaId?: string; // -> MediaItem.id (for media elements)
   name: string;
+  /** What this instance renders or plays. */
+  description?: string;
+  /** Why this instance exists in the complete composition. */
+  purpose?: string;
   component: string; // player component key: VideoPlayer | ImagePlayer | AudioPlayer | TextPlayer
   // Generated overlays reference a registry artifact. Their source never
   // lives in the timeline document after migration.

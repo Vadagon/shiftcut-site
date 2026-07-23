@@ -13,7 +13,7 @@ import { type TimelineElement, type TimelineTrack } from "@/types/timeline";
 import type { ProjectSettings } from "@/types/project";
 import { serializeCompactProject } from "@/lib/composition-dsl";
 import { parseCompactProject } from "@/lib/composition-dsl-parser";
-import { buildFocusedComponentPrompt, buildTransactionPrompt, parseComponentResult, parseEditorTransaction, simulateTransaction, type ComponentJob, type ComponentResult, type EditorTransaction } from "@/lib/ai-transaction-protocol";
+import { buildFocusedComponentPrompt, buildTransactionPrompt, parseComponentResult, parseEditorTransaction, requestsProjectMutation, simulateTransaction, type ComponentJob, type ComponentResult, type EditorTransaction } from "@/lib/ai-transaction-protocol";
 import { McpAgentSelector } from "./mcp-agent-selector";
 
 type ChatMessage = {
@@ -289,6 +289,9 @@ export function AiChat() {
         ? { plan: checkpoint.plan, simulation: { tracks: checkpoint.stagedTracks, componentJobs: checkpoint.componentJobs, settings: checkpoint.settings } }
         : await runStage("timeline", "Planning editor transaction", baseMessages, (raw) => {
           const plan = parseEditorTransaction(raw, requestSnapshot.revision);
+          if (plan.type === "no_changes" && requestsProjectMutation(value)) {
+            throw new Error("The user gave an actionable editor outcome. Inspect the current project, choose reasonable implementation details, and return an editor_transaction that performs the work instead of asking for preferences.");
+          }
           if (/\b(?:all|everything|complete|entire|full)\b/i.test(value)
             && plan.type === "editor_transaction"
             && /\b(?:next steps?|would add|add later|placeholder|follow[- ]?up)\b/i.test(`${plan.summary} ${plan.reply}`)) {
@@ -1118,12 +1121,15 @@ function commitTransaction(plan: Extract<EditorTransaction, { type: "editor_tran
     target.componentId = artifact.id;
     target.componentVersion = artifact.version;
     target.name = target.name || artifact.name;
+    target.description = result.description;
   }
   const activeProject = useProjectStore.getState().activeProject;
   const settingsChanged = Boolean(activeProject) && !sameProjectSettings(activeProject!.settings, settings);
+  const descriptionChanged = Boolean(activeProject) && activeProject!.compositionDescription !== plan.compositionDescription;
   const timelineChanged = !sameTimeline(store.tracks, next);
-  if (!timelineChanged && !settingsChanged) return [];
+  if (!timelineChanged && !settingsChanged && !descriptionChanged) return [];
   if (settingsChanged) useProjectStore.getState().setSettingsForCommit(settings);
+  if (descriptionChanged) useProjectStore.getState().setCompositionDescriptionForCommit(plan.compositionDescription);
   if (timelineChanged) store.replaceTimeline(next, plan.summary);
   else useProjectStore.getState().bumpRevision();
   const selected = componentResults.at(-1)?.elementId;
