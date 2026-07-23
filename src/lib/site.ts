@@ -295,6 +295,114 @@ export const homeFaqs = [
   },
 ] as const;
 
+// Per-feature "hero moments" — one full visual section each (mirrors how the
+// best AI-editor sites sell). Products are feature-identical to the category;
+// each claim is backed by a real capability. `media` describes the asset to drop in.
+export const featureSections = [
+  {
+    id: "expert",
+    eyebrow: "Edit like a pro",
+    title: "It edits like an expert editor",
+    body: "ShiftCut watches your footage, finds the strongest moments, cuts the dead air and repeated takes, and lays in B-roll where it belongs — the judgment calls an editor makes, on autopilot.",
+    prompt: "Turn this 20-minute interview into a tight 3-minute cut of the best moments.",
+    media: {
+      label: "Before / after edit",
+      note: "Split-frame or screen recording: the raw timeline on the left, ShiftCut's finished cut on the right, with the AI-selected “best moment” segments highlighted.",
+      aspect: "16 / 9",
+    },
+  },
+  {
+    id: "motion",
+    eyebrow: "Motion graphics",
+    title: "Motion graphics, generated from a sentence",
+    body: "Chapter cards, bar charts, timelines, pie charts, animated keyword typing, and on-screen emphasis — described in plain words, rendered clean. No After Effects, no keyframing.",
+    prompt: "Turn this rough creator edit into crisp chapters, charts, and emphasized on-screen moments.",
+    media: {
+      label: "Motion graphics gallery",
+      note: "Short looping clips of each graphic type: chapter card, bar chart, timeline, pie chart, keyword typing, emphasis pop. 6 tiles or an autoplay reel.",
+      aspect: "16 / 9",
+    },
+  },
+  {
+    id: "text",
+    eyebrow: "Text-based editing",
+    title: "Edit your talking-head like a doc",
+    body: "Change a word, cut a sentence, or strip filler straight from the transcript — the timeline follows. The fastest way to clean up talking-head footage without ever scrubbing.",
+    prompt: "Remove the filler words and the tangent about pricing.",
+    media: {
+      label: "Transcript editor",
+      note: "Screenshot/recording of the transcript panel: deleting a sentence in the text and the timeline updating in sync. Show struck-through filler words.",
+      aspect: "16 / 10",
+    },
+  },
+  {
+    id: "captions",
+    eyebrow: "Captions",
+    title: "Auto captions, in 100+ languages",
+    body: "Accurate, perfectly synced captions in your style — pick a look or describe your own. Translate to any language in one line.",
+    prompt: "Add bold TikTok-style captions, in Spanish.",
+    media: {
+      label: "Caption style carousel",
+      note: "A row of short clips showing the same line in each named style (see the style chips below). Ideally a hover/tap-to-switch carousel.",
+      aspect: "9 / 16",
+    },
+  },
+  {
+    id: "image",
+    eyebrow: "Image generation",
+    title: "Image generation, right inside your edit",
+    body: "Generate thumbnails, title cards, and reference images without leaving the project — matched to your look and dropped straight onto the timeline.",
+    prompt: "Generate a bold thumbnail with my face and the title “I quit my job.”",
+    media: {
+      label: "Generated thumbnails",
+      note: "3–4 example generated thumbnails/title cards, plus the prompt that made them. Show them landing on the timeline.",
+      aspect: "16 / 9",
+    },
+  },
+  {
+    id: "video",
+    eyebrow: "Video generation",
+    title: "Generate the shots you couldn't film",
+    body: "B-roll, establishing shots, anything you couldn't capture on set — straight from a prompt, kept visually consistent with a reference frame from your own footage.",
+    prompt: "Generate a cinematic city-skyline B-roll that matches this shot.",
+    media: {
+      label: "Generated B-roll",
+      note: "A reference frame → generated clip pair, showing visual consistency. One or two short autoplay loops.",
+      aspect: "16 / 9",
+    },
+  },
+  {
+    id: "music",
+    eyebrow: "Music",
+    title: "Royalty-free music, made for your cut",
+    body: "Describe a genre or vibe and get an original, royalty-free track at exactly the length your video needs — no library search, no licensing worries.",
+    prompt: "Add an upbeat lo-fi track for the full 45 seconds.",
+    media: {
+      label: "Music generator",
+      note: "Waveform/player mockup with a few genre chips and an audio sample per vibe. Show the track length matching the clip.",
+      aspect: "16 / 6",
+    },
+  },
+] as const;
+
+// Named caption looks — concrete style names build credibility.
+export const captionStyles = [
+  "Clean",
+  "TikTok Pop",
+  "Hormozi",
+  "Karaoke",
+  "Neon",
+  "Noir Glass",
+  "Bubble",
+  "Minimal",
+] as const;
+
+// Social proof — placeholders until real assets/metrics land.
+export const socialProof = {
+  metricNote: "Drop in real numbers when you have them (GitHub stars, projects edited, creators).",
+  logosNote: "Creator / brand logos or a Product Hunt badge go here once secured.",
+} as const;
+
 // Docs sidebar structure.
 export const docsNav = [
   {
