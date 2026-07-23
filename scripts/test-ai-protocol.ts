@@ -29,7 +29,7 @@ const transaction = parseEditorTransaction(JSON.stringify({
     { type: "create_track", temporaryId: "new:overlay", trackType: "visual", name: "Overlay", position: 0 },
     { type: "move_element", elementId: "title-1", trackId: "new:overlay", startTime: 1 },
     { type: "update_element", elementId: "title-1", patch: { duration: 5, params: { text: "New" } } },
-    { type: "update_element", elementId: "video-1", patch: { duration: 6 } },
+    { type: "update_element", elementId: "video-1", patch: { duration: 6, width: 1080, height: 1920 } },
     { type: "delete_track", trackId: "v-empty" },
     { type: "edit_component", elementId: "title-1", instruction: "Make it explode at 3 seconds" },
     { type: "create_component", temporaryElementId: "new:badge", trackId: "new:overlay", name: "Badge", startTime: 6, duration: 2, params: { text: "NEW" }, instruction: "Create an animated badge" },
@@ -41,6 +41,8 @@ if (transaction.type !== "editor_transaction") throw new Error("Transaction was 
 const simulation = simulateTransaction({ transaction, tracks, assets: [{ id: "media-1", name: "Video", kind: "video", mime: "video/mp4", size: 1, duration: 8, createdAt: 0 }], settings: { width: 1920, height: 1080, fps: 30 } });
 const title = simulation.tracks.flatMap((track) => track.elements).find((element) => element.id === "title-1");
 if (!title || title.startTime !== 1 || title.duration !== 5 || title.params.text !== "New") throw new Error("Compound transaction simulation failed.");
+const video = simulation.tracks.flatMap((track) => track.elements).find((element) => element.id === "video-1");
+if (!video || video.params.width !== 1080 || video.params.height !== 1920) throw new Error("Flat visual properties were not normalized into element params.");
 if (simulation.tracks.some((track) => track.id === "v-empty")) throw new Error("Empty track was not deleted.");
 if (simulation.componentJobs.length !== 2 || simulation.componentJobs[0].elementId !== "title-1") throw new Error("Component jobs were not staged.");
 if (simulation.settings.width !== 1080 || simulation.settings.height !== 1920) throw new Error("Project settings were not staged.");
@@ -72,6 +74,7 @@ console.log(JSON.stringify({
   compoundOperations: "simulated atomically",
   temporaryTrackIds: "resolved",
   projectSettings: "staged atomically",
+  flatElementProperties: "normalized into live params",
   overlap: "expanded into adjacent lane",
   focusedComponent: "accepted",
 }));

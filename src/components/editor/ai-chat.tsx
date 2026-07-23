@@ -7,7 +7,7 @@ import { useMediaStore } from "@/stores/media-store";
 import { usePanelStore } from "@/stores/panel-store";
 import { useComponentStore } from "@/stores/component-store";
 import { storageService } from "@/lib/storage/storage-service";
-import type { ChatMemoryData } from "@/lib/storage/types";
+import type { ChatMemoryData, ProjectRevision } from "@/lib/storage/types";
 import { uid } from "@/lib/utils";
 import { type TimelineElement, type TimelineTrack } from "@/types/timeline";
 import type { ProjectSettings } from "@/types/project";
@@ -160,7 +160,6 @@ export function AiChat() {
       && (resumeCheckpoint.settings.width !== requestedResolution.width || resumeCheckpoint.settings.height !== requestedResolution.height)) {
       resumeCheckpoint = undefined;
     }
-    const animationRequested = /\b(?:animate|animation|explode|explosion|burst|particle|motion|bounce|slide|zoom|transition)\b/i.test(value);
     const requestSnapshot = project ? projectSnapshot(project, tracks, pool, components, selectedElementId, value) : undefined;
     const messageId = requestId ?? uid("msg");
     let progressSteps: ProgressStep[] = resumeCheckpoint ? readProgress(messages.find((message) => message.id === requestId)?.artifact).map((step) => ({
@@ -208,11 +207,14 @@ export function AiChat() {
       setRequestPhase("thinking");
       setWorkLabel("Analyzing timeline and project");
       if (!requestSnapshot) throw new Error("No active project composition is available.");
+      const recentRevisions = project ? await storageService.loadRevisions(project.id) : [];
+      const recentChanges = recentProjectChanges(recentRevisions, requestSnapshot.settings, requestSnapshot.revision);
       const systemPrompt = buildTransactionPrompt({
         projectName: requestSnapshot.name,
         revision: requestSnapshot.revision,
         compactProject: requestSnapshot.compactProject,
         memory: context.memory?.summary ?? "",
+        recentChanges,
         selectedElementId: requestSnapshot.selectedElementId,
         suggestedElementId: requestSnapshot.suggestedElementId,
       });
@@ -301,7 +303,7 @@ export function AiChat() {
           if (plan.type === "editor_transaction" && simulation
             && simulation.componentJobs.length === 0
             && sameTimeline(tracks, simulation.tracks)
-            && JSON.stringify(requestSnapshot.settings) === JSON.stringify(simulation.settings)) {
+            && sameProjectSettings(requestSnapshot.settings, simulation.settings)) {
             throw new Error("The transaction is a no-op. Return no_changes with a useful clarification question, or return operations that materially change the current project.");
           }
           return { plan, simulation };
@@ -355,7 +357,11 @@ export function AiChat() {
             "component",
             `Generating component ${jobIndex + 1}/${simulation.componentJobs.length}`,
             [{ role: "system", content: componentPrompt }, { role: "user", content: job.instruction }],
-            (raw) => parseComponentResult(raw, { expectedRevision: requestSnapshot.revision, elementId: job.elementId, requireAnimation: animationRequested }),
+            (raw) => parseComponentResult(raw, {
+              expectedRevision: requestSnapshot.revision,
+              elementId: job.elementId,
+              requireAnimation: /\b(?:animate|animation|explode|explosion|burst|particle|motion|bounce|slide|zoom|transition)\b/i.test(job.instruction),
+            }),
           );
           componentResults.push(generated);
           if (checkpoint) checkpoint = { ...checkpoint, componentResults: [...componentResults], nextComponentIndex: jobIndex + 1 };
@@ -537,7 +543,13 @@ function readCheckpoint(artifact?: Record<string, unknown>): RequestCheckpoint |
   const settings = asRecord(checkpoint.settings);
   if (!settings || typeof settings.width !== "number" || typeof settings.height !== "number" || typeof settings.fps !== "number") return undefined;
   if (!Array.isArray(checkpoint.stagedTracks) || !Array.isArray(checkpoint.componentJobs) || !Array.isArray(checkpoint.componentResults) || typeof checkpoint.nextComponentIndex !== "number") return undefined;
-  return checkpoint as unknown as RequestCheckpoint;
+  const parsed = checkpoint as unknown as RequestCheckpoint;
+  const currentProject = useProjectStore.getState().activeProject;
+  const cannotProduceAChange = parsed.componentJobs.length === 0
+    && sameTimeline(useTimelineStore.getState().tracks, parsed.stagedTracks)
+    && Boolean(currentProject)
+    && sameProjectSettings(currentProject!.settings, parsed.settings);
+  return cannotProduceAChange ? undefined : parsed;
 }
 
 function RequestProgress({ steps, retryDisabled, onRetry }: { steps: ProgressStep[]; retryDisabled: boolean; onRetry: (stepId: string) => void }) {
@@ -1040,6 +1052,19 @@ function projectSnapshot(project: NonNullable<ReturnType<typeof useProjectStore.
   };
 }
 
+function recentProjectChanges(revisions: ProjectRevision[], currentSettings: ProjectSettings, currentRevision: number) {
+  const recent = revisions.slice(-8);
+  const lines = recent.map((revision) => {
+    const settings = revision.project.settings;
+    return `r${revision.revision}: ${revision.summary} · canvas ${settings.width}×${settings.height} @ ${settings.fps}fps`;
+  });
+  const lastRecorded = recent.at(-1);
+  if (lastRecorded && !sameProjectSettings(lastRecorded.project.settings, currentSettings)) {
+    lines.push(`After r${lastRecorded.revision}, project settings changed to ${currentSettings.width}×${currentSettings.height} @ ${currentSettings.fps}fps (current r${currentRevision}).`);
+  }
+  return lines.join("\n");
+}
+
 function extractRequestedResolution(request: string) {
   const match = request.match(/\b(?:resolution|canvas|video\s+size|output\s+size)\b[^0-9]{0,40}(\d{2,4})\s*[x×]\s*(\d{2,4})/i);
   if (!match) return null;
@@ -1095,7 +1120,7 @@ function commitTransaction(plan: Extract<EditorTransaction, { type: "editor_tran
     target.name = target.name || artifact.name;
   }
   const activeProject = useProjectStore.getState().activeProject;
-  const settingsChanged = Boolean(activeProject) && JSON.stringify(activeProject!.settings) !== JSON.stringify(settings);
+  const settingsChanged = Boolean(activeProject) && !sameProjectSettings(activeProject!.settings, settings);
   const timelineChanged = !sameTimeline(store.tracks, next);
   if (!timelineChanged && !settingsChanged) return [];
   if (settingsChanged) useProjectStore.getState().setSettingsForCommit(settings);
@@ -1132,6 +1157,13 @@ function sameTimeline(left: TimelineTrack[], right: TimelineTrack[]) {
     })),
   }));
   return JSON.stringify(comparable(left)) === JSON.stringify(comparable(right));
+}
+
+function sameProjectSettings(left: ProjectSettings, right: ProjectSettings) {
+  return left.width === right.width
+    && left.height === right.height
+    && left.fps === right.fps
+    && (left.background ?? "#000000") === (right.background ?? "#000000");
 }
 
 function asRecord(value: unknown) { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null; }

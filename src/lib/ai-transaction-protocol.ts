@@ -50,6 +50,7 @@ export function buildTransactionPrompt(input: {
   revision: number;
   compactProject: string;
   memory: string;
+  recentChanges: string;
   selectedElementId: string | null;
   suggestedElementId: string | null;
 }) {
@@ -72,7 +73,7 @@ Allowed operations:
 - {"type":"delete_track","trackId":"existing-track-id"}
 - {"type":"delete_element","elementId":"existing-element-id"}
 - {"type":"move_element","elementId":"existing-element-id","trackId":"existing-or-temporary-track-id","startTime":2}
-- {"type":"update_element","elementId":"existing-element-id","patch":{"name":"Title","startTime":0,"duration":5,"trimStart":0,"trimEnd":0,"params":{"text":"New","x":540}}}
+- {"type":"update_element","elementId":"existing-element-id","patch":{"name":"Title","startTime":0,"duration":5,"text":"New","x":540,"width":1080}}
 - {"type":"add_media","mediaId":"existing-media-id","trackId":"existing-or-temporary-track-id","startTime":0,"duration":5}
 - {"type":"edit_component","elementId":"existing-component-element-id","instruction":"precise visual/code change"}
 - {"type":"create_component","temporaryElementId":"new:title","trackId":"existing-or-temporary-track-id","name":"Title","startTime":0,"duration":5,"params":{"text":"Sale","x":540,"y":960},"instruction":"precise visual/code request"}
@@ -80,20 +81,17 @@ Allowed operations:
 For questions or ambiguity:
 {"type":"no_changes","expectedRevision":${input.revision},"reply":"question","operations":[]}
 
-Rules:
+Contract:
 - A request may contain many operations. Put all of them in one transaction.
-- When the user explicitly requests a resolution, aspect ratio, frame rate, or background, include update_project_settings before layout operations and design every coordinate against those resulting settings.
-- Resolve short follow-ups such as "yes", "replace", "do it", or "make it faster" from the recent conversation.
-- Conversation history is context for user intent only. The Current project below is the sole authority for what actually exists and what edits have already been applied.
-- Use update_element/move_element for timing, duration, trims, placement, text, transform, color, and volume.
+- If the user's latest instruction is incomplete or does not identify a material change, return no_changes with one concise clarification question. Never invent a no-op transaction.
+- Infer intent from the latest request, recent conversation, recent project changes, and current project together. Do not ask for facts already available in that context.
+- The Current project is authoritative for what exists now. Recent project changes explain how it reached that state; conversation explains the user's intent.
+- Use update_project_settings when project settings must change. It must be first.
+- Use update_element/move_element for timing, duration, trims, placement, text, transform, color, volume, and other element properties. Put ordinary element properties directly in patch; the editor normalizes them into live params.
 - Use edit_component only for rendering structure or animation code.
 - Use create_component only when the user explicitly asks to add a new visual.
-- Add audio assets only to audio tracks. Add image and video assets only to visual tracks.
-- A video already carries its own audio; do not duplicate a video asset onto an audio track.
 - Complete every requested operation in this transaction. Never defer requested work as "next steps", create empty placeholder tracks, or claim unfinished work was completed.
-- For a broad restructure, use create/delete/move/update operations together. Delete empty/unneeded tracks only when requested.
 - Never echo componentId, componentVersion, project settings, or component source.
-- Never overlap elements in one track.
 - Preserve unrelated data.
 - Selected element: ${input.selectedElementId ?? "none"}.
 - Suggested component element: ${input.suggestedElementId ?? "none"}.
@@ -101,6 +99,9 @@ Rules:
 
 Conversation memory:
 ${input.memory || "(none)"}
+
+Recent project changes:
+${input.recentChanges || "(none recorded)"}
 
 Current project:
 ${input.compactProject}`;
@@ -334,14 +335,20 @@ function parseOperation(value: unknown, index: number): EditorOperation {
     case "update_element": {
       const patch = record(item.patch);
       if (!patch || Object.keys(patch).length === 0) throw new Error(`Operation ${index + 1} update_element requires patch.`);
-      return { type: item.type, elementId: requiredString(item.elementId, "elementId"), patch: {
+      if ("params" in patch && !record(patch.params)) throw new Error(`Operation ${index + 1} update_element params must be an object.`);
+      const structuralKeys = new Set(["name", "startTime", "duration", "trimStart", "trimEnd", "params"]);
+      const directParams = Object.fromEntries(Object.entries(patch).filter(([key]) => !structuralKeys.has(key)));
+      const params = { ...(record(patch.params) ?? {}), ...directParams };
+      const normalized = {
         ...(optionalString(patch.name) ? { name: optionalString(patch.name) } : {}),
         ...(finite(patch.startTime) ? { startTime: Number(patch.startTime) } : {}),
         ...(finite(patch.duration) ? { duration: Number(patch.duration) } : {}),
         ...(finite(patch.trimStart) ? { trimStart: Number(patch.trimStart) } : {}),
         ...(finite(patch.trimEnd) ? { trimEnd: Number(patch.trimEnd) } : {}),
-        ...(record(patch.params) ? { params: record(patch.params)! } : {}),
-      } };
+        ...(Object.keys(params).length ? { params } : {}),
+      };
+      if (Object.keys(normalized).length === 0) throw new Error(`Operation ${index + 1} update_element contains no usable changes.`);
+      return { type: item.type, elementId: requiredString(item.elementId, "elementId"), patch: normalized };
     }
     case "add_media": return { type: item.type, mediaId: requiredString(item.mediaId, "mediaId"), trackId: requiredString(item.trackId, "trackId"), startTime: requiredNumber(item.startTime, "startTime"), ...(finite(item.duration) ? { duration: Number(item.duration) } : {}) };
     case "edit_component": return { type: item.type, elementId: requiredString(item.elementId, "elementId"), instruction: requiredString(item.instruction, "instruction") };
