@@ -93,3 +93,28 @@ export interface ChatMemoryData {
   summarizedThroughMessageId: string;
   updatedAt: number;
 }
+
+export interface RenderJobSettings {
+  scale: number;
+  quality: "low" | "medium" | "high";
+  includeAudio: boolean;
+  rangeStart: number;
+  rangeEnd: number;
+  filename: string;
+}
+
+export interface RenderJob {
+  id: string;
+  projectId: string;
+  revision: number;
+  manifestId?: string;
+  settings: RenderJobSettings;
+  status: "queued" | "preparing" | "rendering" | "finalizing" | "complete" | "failed" | "cancelled";
+  progress: number;
+  encodedFrames?: number;
+  estimatedTimeMs?: number;
+  error?: string;
+  output?: { id: string; mime: string; size: number };
+  createdAt: number;
+  completedAt?: number;
+}

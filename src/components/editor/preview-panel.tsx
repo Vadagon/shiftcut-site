@@ -4,13 +4,14 @@
 // active elements at the current playback time. Each media element syncs a
 // <video>/<img>; params drive the CSS transform.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useProjectStore } from "@/stores/project-store";
 import { usePlaybackStore } from "@/stores/playback-store";
 import { useTimelineStore } from "@/stores/timeline-store";
 import { useComponentStore } from "@/stores/component-store";
 import { storageService } from "@/lib/storage/storage-service";
 import { elementEnd, type TimelineElement } from "@/types/timeline";
+import { GeneratedComponentRuntime, validateGeneratedComponent } from "@/components/generated-component-runtime";
 
 export function PreviewPanel() {
   const project = useProjectStore((s) => s.activeProject);
@@ -110,34 +111,16 @@ function Layer({ el, time, playing, selected, onSelect, canvas }: { el: Timeline
         outline: selected ? "2px solid #2563eb" : "none",
         outlineOffset: -2,
       };
-      return <GeneratedComponentLayer el={el} code={artifact.code} time={time} style={generatedStyle} onSelect={onSelect} canvas={canvas} />;
+      const compatibility = validateGeneratedComponent(artifact.code);
+      return <div style={generatedStyle} onMouseDown={onSelect}>
+        {compatibility.compatible ? <GeneratedComponentRuntime code={artifact.code} props={{ ...el.params, localTime: Math.max(0, time - el.startTime), duration: elementEnd(el) - el.startTime, canvasWidth: canvas.width, canvasHeight: canvas.height }} /> : <div className="flex h-full items-center justify-center text-sm text-red-400">Component needs regeneration</div>}
+      </div>;
     }
     return <div style={style} onMouseDown={onSelect} className="flex items-center justify-center"><span style={{ color: (p.color as string) ?? "#fff", fontSize: (p.fontSize as number) ?? 48 }}>{(p.text as string) ?? "Text"}</span></div>;
   }
   if (el.component === "ImagePlayer") return <ImageLayer el={el} style={style} onSelect={onSelect} />;
   if (el.component === "AudioPlayer") return <AudioLayer el={el} time={time} playing={playing} />;
   return <VideoLayer el={el} time={time} playing={playing} style={style} onSelect={onSelect} />;
-}
-
-function GeneratedComponentLayer({ el, code, time, style, onSelect, canvas }: { el: TimelineElement; code: string; time: number; style: React.CSSProperties; onSelect: () => void; canvas: { width: number; height: number } }) {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const staticProps = useMemo(() => ({ ...el.params, canvasWidth: canvas.width, canvasHeight: canvas.height }), [el.params, canvas.width, canvas.height]);
-  const source = useMemo(() => makeComponentDocument(el.component, code, staticProps, canvas), [el.component, code, staticProps, canvas]);
-  const localTime = Math.max(0, time - el.startTime);
-  const duration = elementEnd(el) - el.startTime;
-  const postTimelineTime = useCallback(() => iframeRef.current?.contentWindow?.postMessage({ type: "shiftcut:timeline-time", props: { localTime, duration } }, "*"), [localTime, duration]);
-  useEffect(() => {
-    postTimelineTime();
-  }, [postTimelineTime]);
-  return <iframe ref={iframeRef} title={el.name} sandbox="allow-scripts" srcDoc={source} onLoad={postTimelineTime} onMouseDown={onSelect} style={style} className="h-full w-full border-0 bg-transparent" />;
-}
-
-function makeComponentDocument(name: string, code: string, props: Record<string, unknown>, canvas: { width: number; height: number }) {
-  const safeCode = code.replace(/<\/script/gi, "<\\/script");
-  const safeProps = JSON.stringify(props).replace(/</g, "\\u003c");
-  const safeName = JSON.stringify(name);
-  const safeCanvas = JSON.stringify(canvas);
-  return `<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent}#root{width:${canvas.width}px;height:${canvas.height}px}</style></head><body><div id="root"></div><script src="https://unpkg.com/react@18/umd/react.production.min.js"></script><script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script><script>${safeCode}\ntry { const canvas = ${safeCanvas}; const root = document.getElementById('root'); root.style.width = canvas.width + 'px'; root.style.height = canvas.height + 'px'; const Component = window[${safeName}] || GeneratedComponent; let props = ${safeProps}; const reactRoot = ReactDOM.createRoot(root); const render = () => reactRoot.render(React.createElement(Component, props)); window.addEventListener('message', (event) => { if (event.data?.type === 'shiftcut:timeline-time') { props = { ...props, ...event.data.props }; render(); } }); render(); } catch (error) { document.getElementById('root').textContent = 'Component preview unavailable'; }</script></body></html>`;
 }
 
 function VideoLayer({ el, time, playing, style, onSelect }: { el: TimelineElement; time: number; playing: boolean; style: React.CSSProperties; onSelect: () => void }) {

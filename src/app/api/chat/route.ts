@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { validateGeneratedComponentSource } from "@/lib/generated-component-contract";
 
 export const runtime = "nodejs";
 
@@ -80,7 +81,7 @@ This built-in chat receives a fresh project snapshot on every request. For every
 6. {"action":"update_component","elementId":"existing generated component element id","component":{"name":"ComponentName","description":"What this component visually does.","code":"replacement React source","propsSchema":[]}}
 7. {"action":"replace_timeline","tracks":[{"name":"V2","type":"media","elements":[{"name":"Overlay","startTime":0,"duration":3,"params":{},"generatedComponent":{"name":"ComponentName","description":"...","code":"GeneratedComponent source","propsSchema":[]}}, {"name":"Clip","mediaId":"available asset id","startTime":3,"duration":5,"params":{}}]}]}
 
-For add_component and update_component, code must define function GeneratedComponent(props), use React.createElement only (no JSX, imports, fetch, timers, localStorage, window, document, or external URLs), and render the requested overlay. The code is stored as a React component and runs only in a sandboxed preview iframe. Props include localTime (seconds since the clip began), duration, canvasWidth, canvasHeight, x, y, scale, rotation, opacity, color, fontSize, and text. The iframe fills the full canvas: generated code MUST apply x/y/scale/rotation/opacity itself and must not assume an outer transform. For complex animation, derive every visual state deterministically from localTime. For example, a burst at local second 3 should calculate a bounded progress from localTime - 3 and use a fixed Array.from particle sequence, transforms, opacity, and color. A radial particle burst must distribute its full circle with angle = (i / particleCount) * Math.PI * 2. Never use CSS animation, CSS transitions, requestAnimationFrame, timers, Date, performance, or Math.random. Do not claim edits are complete; say which operations are proposed/applied by the editor.
+For add_component and update_component, code must define function GeneratedComponent(props), use React.createElement only (no JSX, imports, fetch, timers, localStorage, window, document, external URLs, dynamic code, constructor, prototype, or globalThis), and render the requested overlay. The code is stored as an immutable React component and runs through ShiftCut's deterministic preview/export runtime. Props include localTime (seconds since the clip began), duration, canvasWidth, canvasHeight, x, y, scale, rotation, opacity, color, fontSize, and text. The component fills the full canvas: generated code MUST apply x/y/scale/rotation/opacity itself and must not assume an outer transform. For complex animation, derive every visual state deterministically from localTime. For example, a burst at local second 3 should calculate a bounded progress from localTime - 3 and use a fixed Array.from particle sequence, transforms, opacity, and color. A radial particle burst must distribute its full circle with angle = (i / particleCount) * Math.PI * 2. Never use CSS animation, CSS transitions, requestAnimationFrame, timers, Date, performance, or Math.random. Do not claim edits are complete; say which operations are proposed/applied by the editor.
 
 This request requires an animation: ${animationRequested}. When true, return an add_component or update_component operation (not merely update_params), and its code MUST use props.localTime to calculate the requested motion. A static text component is invalid. A user should never need to mention implementation details such as localTime, particles, or timing props.
 
@@ -238,7 +239,10 @@ function isValidOperation(operation: unknown): boolean {
   const isComponent = (value: unknown) => {
     if (!value || typeof value !== "object" || Array.isArray(value)) return false;
     const component = value as Record<string, unknown>;
-    return typeof component.name === "string" && typeof component.description === "string" && typeof component.code === "string";
+    return typeof component.name === "string"
+      && typeof component.description === "string"
+      && typeof component.code === "string"
+      && validateGeneratedComponentSource(component.code).compatible;
   };
 
   switch (item.action) {

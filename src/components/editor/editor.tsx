@@ -12,6 +12,7 @@ import { PreviewPanel } from "./preview-panel";
 import { Timeline } from "./timeline";
 import { I } from "./icons";
 import { AiChat } from "./ai-chat";
+import { ExportDialog } from "./export-dialog";
 
 const MIN_CHAT_WIDTH = 260;
 const MIN_ASSETS_WIDTH = 260;
@@ -33,11 +34,15 @@ export function Editor({ projectId }: { projectId: string }) {
   const loadForProject = useMediaStore((s) => s.loadForProject);
   const loadComponents = useComponentStore((s) => s.loadForProject);
   const seek = usePlaybackStore((s) => s.seek);
+  const tracks = useTimelineStore((s) => s.tracks);
+  const pool = useMediaStore((s) => s.pool);
+  const components = useComponentStore((s) => s.components);
   const [chatWidth, setChatWidth] = useState<number | null>(null);
   const [assetsWidth, setAssetsWidth] = useState<number | null>(null);
   const [viewerHeight, setViewerHeight] = useState<number | null>(null);
   const [visiblePanels, setVisiblePanels] = useState({ chat: true, assets: true, viewer: true, timeline: true });
   const [layoutOpen, setLayoutOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const layoutRef = useRef<HTMLElement>(null);
   const workspaceRef = useRef<HTMLElement>(null);
   const topRef = useRef<HTMLDivElement>(null);
@@ -121,7 +126,7 @@ export function Editor({ projectId }: { projectId: string }) {
             <button type="button" onClick={() => setLayoutOpen((open) => !open)} title="Panels" aria-expanded={layoutOpen} className="rounded-lg p-2 text-[#4e4a45] hover:bg-[#efedea]">⊞</button>
             {layoutOpen && <PanelVisibilityMenu visiblePanels={visiblePanels} onToggle={(panel) => setVisiblePanels((current) => ({ ...current, [panel]: !current[panel] }))} />}
             <McpStatus />
-            <button className="rounded-[4px] border border-[#c65d2d] bg-[#e57438] px-5 py-2 text-[13px] font-semibold text-white shadow-[inset_0_1px_rgba(255,255,255,.35)] hover:bg-[#d96930]">Export</button>
+            <button type="button" onClick={() => setExportOpen(true)} className="rounded-[4px] border border-[#c65d2d] bg-[#e57438] px-5 py-2 text-[13px] font-semibold text-white shadow-[inset_0_1px_rgba(255,255,255,.35)] hover:bg-[#d96930]">Export</button>
             <span className="border-l border-[#d2cfca] pl-3 text-[13px] font-semibold text-[#56524d]">✣ 4.6</span><span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#d7b49d] text-[11px] font-semibold text-white">S</span>
           </div>
       </header>
@@ -139,6 +144,7 @@ export function Editor({ projectId }: { projectId: string }) {
           {visiblePanels.timeline && <div className="min-h-0 flex-1"><Timeline /></div>}
         </section>
       </main>
+      {exportOpen && <ExportDialog project={activeProject} tracks={tracks} pool={pool} components={components} onClose={() => setExportOpen(false)} />}
     </div>
   );
 }

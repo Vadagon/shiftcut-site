@@ -18,6 +18,7 @@ import type {
   ComponentRegistryData,
   ProjectRevision,
   RevisionHistoryData,
+  RenderJob,
 } from "./types";
 
 class StorageService {
@@ -38,6 +39,8 @@ class StorageService {
   private chatHistory = new IndexedDBAdapter<ChatHistoryData>("shiftcut-chat", "history", this.config.version);
   private chatMemory = new IndexedDBAdapter<ChatMemoryData>("shiftcut-chat-memory", "memory", this.config.version);
   private revisions = new IndexedDBAdapter<RevisionHistoryData>("shiftcut-revisions", "history", this.config.version);
+  private renderJobs = new IndexedDBAdapter<RenderJob>("shiftcut-render-jobs", "jobs", this.config.version);
+  private renderOutputs = new OPFSAdapter("render-outputs");
 
   private timelineAdapter(projectId: string) {
     return new IndexedDBAdapter<TimelineData>(`${this.config.timelineDb}-${projectId}`, "timeline", this.config.version);
@@ -66,6 +69,11 @@ class StorageService {
     await this.revisions.remove(id);
     await this.timelineAdapter(id).remove("main");
     await this.componentAdapter(id).remove("registry");
+    const jobs = await this.listRenderJobs(id);
+    await Promise.all(jobs.map(async (job) => {
+      if (job.output) await this.renderOutputs.deleteFile(job.output.id);
+      await this.renderJobs.remove(job.id);
+    }));
   }
 
   // ── Media (global pool) ──
@@ -162,6 +170,24 @@ class StorageService {
   }
   async loadRevisions(projectId: string): Promise<ProjectRevision[]> {
     return (await this.revisions.get(projectId))?.revisions ?? [];
+  }
+
+  // ── Local render jobs + cached MP4 outputs ──
+  async saveRenderJob(job: RenderJob): Promise<void> {
+    await this.renderJobs.set(job.id, job);
+  }
+  async listRenderJobs(projectId: string): Promise<RenderJob[]> {
+    return (await this.renderJobs.getAll()).filter((job) => job.projectId === projectId).sort((a, b) => b.createdAt - a.createdAt);
+  }
+  async saveRenderOutput(id: string, blob: Blob): Promise<void> {
+    await this.renderOutputs.writeFile(id, blob);
+  }
+  async getRenderOutput(id: string): Promise<Blob | null> {
+    return this.renderOutputs.readFile(id);
+  }
+  async deleteRenderJob(job: RenderJob): Promise<void> {
+    if (job.output) await this.renderOutputs.deleteFile(job.output.id);
+    await this.renderJobs.remove(job.id);
   }
 }
 
