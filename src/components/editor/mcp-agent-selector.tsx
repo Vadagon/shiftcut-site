@@ -17,7 +17,15 @@ const AGENTS: Agent[] = [
 export function McpAgentSelector({ placement = "below", compact = false }: { placement?: "above" | "below"; compact?: boolean }) {
   const [open, setOpen] = useState(false);
   const [expandedAgent, setExpandedAgent] = useState<Agent["id"] | null>(null);
+  const [connected, setConnected] = useState(false);
+  const [copied, setCopied] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const update = (event: Event) => setConnected(Boolean((event as CustomEvent<{ connected?: boolean }>).detail?.connected));
+    window.addEventListener("shiftcut:mcp-status", update);
+    return () => window.removeEventListener("shiftcut:mcp-status", update);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -44,8 +52,8 @@ export function McpAgentSelector({ placement = "below", compact = false }: { pla
         onClick={() => setOpen((current) => !current)}
         className="inline-flex items-center gap-1.5 whitespace-nowrap py-1 text-[10px] font-semibold text-[#8d8982] hover:text-[#4f4b46]"
       >
-        <i className="h-1.5 w-1.5 rounded-full bg-[#aaa69f]" />
-        MCP
+        <i className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-[#4f9662]" : "bg-[#aaa69f]"}`} />
+        MCP{connected ? " · connected" : ""}
         <span className="text-[8px]">{open ? "▴" : "▾"}</span>
       </button>
 
@@ -57,7 +65,7 @@ export function McpAgentSelector({ placement = "below", compact = false }: { pla
         >
           <div className="border-b border-[#d7d4cf] px-2 pb-2 pt-1">
             <p className="text-[11px] font-semibold text-[#3f3b37]">Connect your AI agent</p>
-            <p className="mt-0.5 text-[10px] leading-4 text-[#77726c]">MCP connections will be free. Agent setup is not active yet.</p>
+            <p className="mt-0.5 text-[10px] leading-4 text-[#77726c]">{connected ? "The open project is connected to a local MCP agent." : "Start the ShiftCut MCP server, then keep this project tab open."}</p>
           </div>
           {AGENTS.map((agent) => {
             const expanded = expandedAgent === agent.id;
@@ -72,14 +80,21 @@ export function McpAgentSelector({ placement = "below", compact = false }: { pla
                 >
                   <span className="h-2 w-2 rounded-full border border-[#aaa69f] bg-[#dedbd6]" />
                   <span className="flex-1 font-semibold">{agent.name}</span>
-                  <span className="text-[9px] font-medium text-[#9a958e]">Unavailable</span>
+                  <span className={`text-[9px] font-medium ${connected && agent.id === "codex" ? "text-[#4f9662]" : "text-[#9a958e]"}`}>{connected && agent.id === "codex" ? "Connected" : "Setup"}</span>
                   <span className="text-[#77726c]">{expanded ? "−" : "+"}</span>
                 </button>
                 {expanded && (
                   <div className="bg-[#eeece8] px-4 py-3 text-[10px] leading-4 text-[#68635d]">
                     <p>{agent.detail}</p>
-                    <button type="button" disabled className="mt-2 w-full border border-[#d0cdc8] bg-[#e4e1dc] px-2 py-1.5 font-semibold text-[#aaa69f]">
-                      Connect {agent.name} — coming soon
+                    <button type="button" onClick={() => {
+                      const command = agent.id === "codex"
+                        ? "codex mcp add shiftcut -- node /Users/movebender/Work/video-editor/shiftcut-mcp/dist/server.js"
+                        : `Configure ${agent.name} with stdio command: node /Users/movebender/Work/video-editor/shiftcut-mcp/dist/server.js`;
+                      void navigator.clipboard.writeText(command);
+                      setCopied(true);
+                      window.setTimeout(() => setCopied(false), 1500);
+                    }} className="mt-2 w-full border border-[#bdb9b3] bg-[#f7f6f4] px-2 py-1.5 font-semibold text-[#5b5751] hover:bg-[#e4e1dc]">
+                      {copied ? "Setup copied" : `Copy ${agent.name} setup`}
                     </button>
                   </div>
                 )}

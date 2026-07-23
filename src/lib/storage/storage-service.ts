@@ -58,7 +58,7 @@ class StorageService {
     return this.projects.get(id);
   }
   async saveProject(p: TProject): Promise<void> {
-    const s: SerializedProject = { id: p.id, name: p.name, revision: p.revision, settings: p.settings, createdAt: p.createdAt, updatedAt: p.updatedAt };
+    const s: SerializedProject = { id: p.id, name: p.name, compositionDescription: p.compositionDescription, revision: p.revision, settings: p.settings, createdAt: p.createdAt, updatedAt: p.updatedAt };
     await this.projects.set(p.id, s);
   }
   async deleteProject(id: string): Promise<void> {

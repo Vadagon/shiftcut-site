@@ -14,6 +14,7 @@ import { I } from "./icons";
 import { AiChat } from "./ai-chat";
 import { ExportDialog } from "./export-dialog";
 import { McpAgentSelector } from "./mcp-agent-selector";
+import { McpBridge } from "./mcp-bridge";
 
 const MIN_CHAT_WIDTH = 260;
 const MIN_ASSETS_WIDTH = 260;
@@ -43,6 +44,7 @@ export function Editor({ projectId }: { projectId: string }) {
   const [assetsWidth, setAssetsWidth] = useState<number | null>(null);
   const [viewerHeight, setViewerHeight] = useState<number | null>(null);
   const [visiblePanels, setVisiblePanels] = useState({ chat: true, assets: true, viewer: true, timeline: true });
+  const [mcpConnected, setMcpConnected] = useState(false);
   const [layoutOpen, setLayoutOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const layoutRef = useRef<HTMLElement>(null);
@@ -50,6 +52,12 @@ export function Editor({ projectId }: { projectId: string }) {
   const topRef = useRef<HTMLDivElement>(null);
   const chatRef = useRef<HTMLDivElement>(null);
   const assetsRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const updateMcpStatus = (event: Event) => setMcpConnected(Boolean((event as CustomEvent<{ connected?: boolean }>).detail?.connected));
+    window.addEventListener("shiftcut:mcp-status", updateMcpStatus);
+    return () => window.removeEventListener("shiftcut:mcp-status", updateMcpStatus);
+  }, []);
 
   useEffect(() => {
     loadProject(projectId);
@@ -126,6 +134,8 @@ export function Editor({ projectId }: { projectId: string }) {
   };
 
   return (
+    <>
+    <McpBridge />
     <div className="h-dvh overflow-hidden bg-[#e9e8e5] text-[#35332f]">
       <header className="relative flex h-14 shrink-0 items-center justify-between border-b border-[#cecdc9] bg-[#efeeeb] px-4">
           <Link href="/editor" aria-label="All projects" className="rounded-md p-1 text-[#4a4743] hover:bg-[#efedea]"><HomeIcon /></Link>
@@ -146,8 +156,8 @@ export function Editor({ projectId }: { projectId: string }) {
       </header>
 
       <main ref={layoutRef} className="flex h-[calc(100dvh-56px)] min-h-0 overflow-hidden">
-        {visiblePanels.chat && <div ref={chatRef} className="min-h-0 shrink-0" style={{ width: chatWidth ?? "30.3vw", minWidth: MIN_CHAT_WIDTH }}><AiChat /></div>}
-        {visiblePanels.chat && <PanelSeparator onPointerDown={startResize("chat")} />}
+        {visiblePanels.chat && !mcpConnected && <div ref={chatRef} className="min-h-0 shrink-0" style={{ width: chatWidth ?? "30.3vw", minWidth: MIN_CHAT_WIDTH }}><AiChat /></div>}
+        {visiblePanels.chat && !mcpConnected && <PanelSeparator onPointerDown={startResize("chat")} />}
         <section ref={workspaceRef} className="flex min-w-0 flex-1 flex-col">
           {(visiblePanels.assets || visiblePanels.viewer) && <div ref={topRef} className={`flex min-h-0 ${visiblePanels.timeline ? "shrink-0" : "flex-1"}`} style={visiblePanels.timeline ? { height: viewerHeight ?? "44%" } : undefined}>
             {visiblePanels.assets && <div ref={assetsRef} className="min-h-0 shrink-0" style={{ width: assetsWidth ?? "min(30%, 460px)", minWidth: MIN_ASSETS_WIDTH }}><MediaPanel /></div>}
@@ -160,6 +170,7 @@ export function Editor({ projectId }: { projectId: string }) {
       </main>
       {exportOpen && <ExportDialog project={activeProject} tracks={tracks} pool={pool} components={components} onClose={() => setExportOpen(false)} />}
     </div>
+    </>
   );
 }
 
