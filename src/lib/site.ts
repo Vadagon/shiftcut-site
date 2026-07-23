@@ -7,7 +7,7 @@ export const site = {
   tagline: "CapCut on autopilot",
   domain: "shiftcut.verblike.com",
   github: "https://github.com/Vadagon/shiftcut",
-  company: "Verblike LLC",
+  company: "Vladyslav Verbytskyi",
   companyUrl: "https://verblike.com",
   contact: "shiftcut@verblike.com",
   description:

@@ -31,7 +31,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
   }
   if (!validMessages(body.messages)) return NextResponse.json({ error: "A valid bounded model conversation is required." }, { status: 400 });
-  if (!body.messages[0].content.startsWith("You are ShiftCut's video-editing assistant") || !body.messages[0].content.includes("<ShiftCutComposition")) {
+  const isShiftCutPrompt = body.messages[0].content.startsWith("You are ShiftCut")
+    || body.messages[0].content.startsWith("You are editing exactly one ShiftCut");
+  if (!isShiftCutPrompt || (!body.messages[0].content.includes("<ShiftCutProject") && !body.messages[0].content.includes("<CurrentComponent"))) {
     return NextResponse.json({ error: "Only ShiftCut composition requests are allowed." }, { status: 400 });
   }
 

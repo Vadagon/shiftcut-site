@@ -11,8 +11,8 @@ import type { ChatMemoryData } from "@/lib/storage/types";
 import { uid } from "@/lib/utils";
 import { elementEnd, type ElementParams, type TimelineElement, type TimelineTrack, type TrackType } from "@/types/timeline";
 import { validateGeneratedComponentSource } from "@/lib/generated-component-contract";
-import { serializeShiftCutComposition } from "@/lib/composition-dsl";
-import { acceptShiftCutResponse, buildShiftCutSystemPrompt } from "@/lib/ai-composition-protocol";
+import { serializeCompactProject } from "@/lib/composition-dsl";
+import { acceptComponentStage, acceptTimelineStage, buildComponentSystemPrompt, buildTimelineSystemPrompt } from "@/lib/ai-composition-protocol";
 
 type ChatMessage = {
   id: string;
@@ -169,84 +169,89 @@ export function AiChat() {
       if (context.memory !== memory) setMemory(context.memory);
       setRequestPhase("thinking");
       if (!requestSnapshot) throw new Error("No active project composition is available.");
-      const systemPrompt = buildShiftCutSystemPrompt({
+      const systemPrompt = buildTimelineSystemPrompt({
         projectName: requestSnapshot.name,
-        composition: requestSnapshot.composition,
+        compactProject: requestSnapshot.compactProject,
         memory: context.memory?.summary ?? "",
         selectedElementId: requestSnapshot.selectedElementId,
         suggestedElementId: requestSnapshot.suggestedElementId,
-        animationRequested,
       });
       const baseMessages = [{ role: "system" as const, content: systemPrompt }, ...context.messages];
       const attempts: Record<string, unknown>[] = [];
-      let retryMessages = baseMessages;
-      let result: ChatResponse | null = null;
-      let lastAcceptanceError = "The model returned an empty response.";
-      for (let attempt = 1; attempt <= MAX_RESPONSE_ATTEMPTS; attempt += 1) {
-        if (attempt > 1) {
-          setRetryAttempt(attempt);
-          setRequestPhase("retrying");
-        } else {
-          setRequestPhase("thinking");
-        }
-        const requestBody = { messages: retryMessages };
-        const attemptStartedAt = currentTimestamp();
-        transportArtifact = {
-          ...transportArtifact,
-          requestBody: attempt === 1 ? requestBody : transportArtifact.requestBody,
-          auxiliaryRequests: context.compactionTransport ? [context.compactionTransport] : [],
-          response: { attempts: [...attempts], activeAttempt: attempt },
-        };
-        updateMessage(messageId, { artifact: { transport: transportArtifact } });
-        const response = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(requestBody),
-        });
-        const responseBody = await response.json().catch(() => null) as { content?: unknown; error?: unknown; upstream?: unknown } | null;
-        const attemptRecord: Record<string, unknown> = {
-          attempt,
-          requestBody,
-          startedAt: attemptStartedAt,
-          response: {
-            status: response.status,
-            statusText: response.statusText,
-            headers: Object.fromEntries(response.headers.entries()),
-            body: responseBody,
-            completedAt: currentTimestamp(),
-          },
-        };
-        attempts.push(attemptRecord);
-        transportArtifact = { ...transportArtifact, response: { attempts: [...attempts], activeAttempt: null } };
-        updateMessage(messageId, { artifact: { transport: transportArtifact } });
-        if (!response.ok) {
-          lastAcceptanceError = typeof responseBody?.error === "string" ? responseBody.error : "AI proxy request failed.";
-          if (response.status >= 400 && response.status < 500) throw new Error(lastAcceptanceError);
-        } else {
-          const rawContent = typeof responseBody?.content === "string" ? responseBody.content : "";
-          try {
-            if (!rawContent.trim()) throw new Error("The model returned an empty response.");
-            result = acceptShiftCutResponse({
-              rawContent,
-              currentCompositionSource: requestSnapshot.composition,
-              animationRequested,
-            });
-            attemptRecord.acceptance = { passed: true };
-            break;
-          } catch (error) {
-            lastAcceptanceError = error instanceof Error ? error.message : "The returned JSX failed client acceptance.";
+      async function runStage<T>(stage: "timeline" | "component", stageMessages: Array<{ role: "system" | "user" | "assistant"; content: string }>, accept: (raw: string) => T): Promise<T> {
+        let retryMessages = stageMessages;
+        let lastAcceptanceError = "The model returned an empty response.";
+        for (let attempt = 1; attempt <= MAX_RESPONSE_ATTEMPTS; attempt += 1) {
+          setRetryAttempt(attempt > 1 ? attempt : null);
+          setRequestPhase(attempt > 1 ? "retrying" : "thinking");
+          const requestBody = { messages: retryMessages };
+          const attemptStartedAt = currentTimestamp();
+          transportArtifact = {
+            ...transportArtifact,
+            requestBody: transportArtifact.requestBody ?? requestBody,
+            auxiliaryRequests: context.compactionTransport ? [context.compactionTransport] : [],
+            response: { attempts: [...attempts], activeStage: stage, activeAttempt: attempt },
+          };
+          updateMessage(messageId, { artifact: { transport: transportArtifact } });
+          const response = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(requestBody) });
+          const responseBody = await response.json().catch(() => null) as { content?: unknown; error?: unknown; upstream?: unknown } | null;
+          const attemptRecord: Record<string, unknown> = {
+            stage,
+            attempt,
+            requestBody,
+            startedAt: attemptStartedAt,
+            response: { status: response.status, statusText: response.statusText, headers: Object.fromEntries(response.headers.entries()), body: responseBody, completedAt: currentTimestamp() },
+          };
+          attempts.push(attemptRecord);
+          if (!response.ok) {
+            lastAcceptanceError = typeof responseBody?.error === "string" ? responseBody.error : "AI proxy request failed.";
             attemptRecord.acceptance = { passed: false, error: lastAcceptanceError };
-            if (attempt < MAX_RESPONSE_ATTEMPTS) {
+            if (response.status >= 400 && response.status < 500) throw new Error(lastAcceptanceError);
+          } else {
+            const rawContent = typeof responseBody?.content === "string" ? responseBody.content : "";
+            try {
+              if (!rawContent.trim()) throw new Error("The model returned an empty response.");
+              const accepted = accept(rawContent);
+              attemptRecord.acceptance = { passed: true };
+              transportArtifact = { ...transportArtifact, response: { attempts: [...attempts], activeStage: null, activeAttempt: null } };
+              updateMessage(messageId, { artifact: { transport: transportArtifact } });
+              return accepted;
+            } catch (error) {
+              lastAcceptanceError = error instanceof Error ? error.message : "The returned JSX failed client acceptance.";
+              attemptRecord.acceptance = { passed: false, error: lastAcceptanceError };
               retryMessages = [
-                ...baseMessages,
+                ...stageMessages,
                 ...(rawContent ? [{ role: "assistant" as const, content: rawContent }] : []),
-                { role: "user" as const, content: `Client acceptance test failed: ${lastAcceptanceError} Return the same intended result as one valid ShiftCutResponse JSX expression only.` },
+                { role: "user" as const, content: `Client ${stage} acceptance failed: ${lastAcceptanceError} Return a corrected response using the required root and exact identifiers only.` },
               ];
             }
           }
+          transportArtifact = { ...transportArtifact, response: { attempts: [...attempts], activeStage: stage, activeAttempt: null } };
+          updateMessage(messageId, { artifact: { transport: transportArtifact } });
         }
+        throw new Error(`The AI ${stage} response failed acceptance after ${MAX_RESPONSE_ATTEMPTS} attempts: ${lastAcceptanceError}`);
       }
-      if (!result) throw new Error(`The AI returned an invalid composition after ${MAX_RESPONSE_ATTEMPTS} attempts. Acceptance test: ${lastAcceptanceError} Nothing was changed; retry the request.`);
+
+      const firstStage = await runStage("timeline", baseMessages, (raw) => acceptTimelineStage({ rawContent: raw, compactProject: requestSnapshot.compactProject }));
+      let result: ChatResponse;
+      if (firstStage.type === "no-changes") {
+        result = { reply: firstStage.reply, expectedRevision: firstStage.expectedRevision, operations: [] };
+      } else if (firstStage.type === "timeline-edit") {
+        result = { reply: firstStage.reply, expectedRevision: firstStage.expectedRevision, operations: [{ action: "replace_timeline", tracks: firstStage.tracks, compositionSource: firstStage.source }] };
+      } else {
+        const revisionBeforeFocus = useProjectStore.getState().activeProject?.revision;
+        if (revisionBeforeFocus !== requestSnapshot.revision) throw new Error("The project changed before the focused component request. Retry with the current revision.");
+        const artifact = firstStage.componentId.startsWith("new:") ? undefined : useComponentStore.getState().get(firstStage.componentId);
+        if (!firstStage.componentId.startsWith("new:") && !artifact) throw new Error("The requested component source is unavailable in the current revision.");
+        const componentPrompt = buildComponentSystemPrompt({ compactProject: requestSnapshot.compactProject, originalRequest: value, request: firstStage, artifact });
+        const componentStage = await runStage("component", [{ role: "system", content: componentPrompt }, { role: "user", content: value }], (raw) =>
+          acceptComponentStage({ rawContent: raw, compactProject: requestSnapshot.compactProject, request: firstStage, requireAnimation: animationRequested }),
+        );
+        const operation = artifact
+          ? { action: "update_component", elementId: firstStage.elementId, component: componentStage.component, compositionSource: componentStage.source }
+          : { action: "add_component", trackId: firstStage.trackId, name: firstStage.name ?? componentStage.component.name, startTime: firstStage.start ?? 0, duration: firstStage.duration ?? 5, params: firstStage.params, component: componentStage.component, compositionSource: componentStage.source };
+        result = { reply: componentStage.reply, expectedRevision: componentStage.expectedRevision, operations: [operation] };
+      }
       transportArtifact = { ...transportArtifact, response: { attempts: [...attempts], finalResult: result, completedAt: currentTimestamp() } };
       const reply = result.reply ?? result.content;
       if (!reply) throw new Error(result.error ?? "AI response failed.");
@@ -397,13 +402,14 @@ function HistoryDrawer({ messages, onClose }: { messages: ChatMessage[]; onClose
         location: "browser client",
         maxAttempts: MAX_RESPONSE_ATTEMPTS,
         rules: [
-          "One restricted JSX root with ShiftCutResponse format shiftcut-ai-jsx/v1",
-          "Exactly one NoChanges or complete ShiftCutComposition child",
-          "Expected and nested composition revisions match the requested current revision",
-          "Canvas width, height, FPS, and background are preserved",
-          "Complete asset ID/type set is preserved and media references are compatible",
-          "Only allowed JSX tags and literal/String.raw attributes are accepted",
-          "Every Component references a supplied safe ComponentDefinition",
+          "Timeline stage root is exactly TimelineEdit, RequestComponent, or NoChanges",
+          "Component stage root is exactly ComponentEdit",
+          "Expected revision matches the compact project revision at every stage",
+          "TimelineEdit returns a complete ordered track list",
+          "Primitive element parameters use normal JSX attributes; String.raw is reserved for structured values",
+          "Timeline media/component references resolve against compact project summaries",
+          "RequestComponent targets an existing component or supplies valid new: IDs and placement",
+          "ComponentEdit target and base identifiers match RequestComponent exactly",
           "Generated source compiles and passes the deterministic runtime safety contract",
           "Clip timing and duration are finite, positive, frame-aligned, and trims are valid",
           "Elements do not overlap within a track",
@@ -527,9 +533,7 @@ function projectSnapshot(project: NonNullable<ReturnType<typeof useProjectStore.
     settings: project.settings,
     selectedElementId,
     suggestedElementId,
-    // This is the complete model-facing source of truth. It deliberately
-    // includes every referenced immutable component source block.
-    composition: serializeShiftCutComposition({ project, tracks, components, assets: pool }),
+    compactProject: serializeCompactProject({ project, tracks, components, assets: pool }),
   };
 }
 
@@ -564,47 +568,6 @@ function applyOperations(operations: TimelineOperation[], requireTimelineTime = 
   const applied: string[] = [];
   for (const operation of operations.slice(0, 12)) {
     if (!operation || typeof operation.action !== "string") continue;
-    if (operation.action === "replace_composition") {
-      const definitions = Array.isArray(operation.componentDefinitions) ? operation.componentDefinitions.map(asRecord).filter(Boolean) as Record<string, unknown>[] : [];
-      if (!definitions.every((definition) => typeof definition.id === "string" && isSafeComponentCode(typeof definition.code === "string" ? definition.code : "", false))) continue;
-      const idMap = new Map<string, { id: string; version: number }>();
-      for (const definition of definitions) {
-        const sourceId = String(definition.id);
-        const existing = useComponentStore.getState().get(sourceId);
-        const schema = componentSchema(definition.propsSchema);
-        const input = {
-          name: stringValue(definition.name, existing?.name ?? "GeneratedComponent"),
-          description: stringValue(definition.description, existing?.description ?? "AI-generated component"),
-          code: String(definition.code),
-          propsSchema: schema,
-        };
-        const unchanged = existing
-          && existing.name === input.name
-          && existing.description === input.description
-          && existing.code === input.code
-          && JSON.stringify(existing.propsSchema) === JSON.stringify(input.propsSchema);
-        const artifact = unchanged ? existing : useComponentStore.getState().upsert(input, existing?.id);
-        idMap.set(sourceId, { id: artifact.id, version: artifact.version });
-      }
-      const remappedTracks = Array.isArray(operation.tracks) ? operation.tracks.map((rawTrack) => {
-        const track = asRecord(rawTrack);
-        return {
-          ...track,
-          elements: Array.isArray(track?.elements) ? track.elements.map((rawElement) => {
-            const element = asRecord(rawElement);
-            const sourceId = typeof element?.componentId === "string" ? element.componentId : "";
-            const target = sourceId ? idMap.get(sourceId) : undefined;
-            return target ? { ...element, componentId: target.id, componentVersion: target.version } : element;
-          }) : [],
-        };
-      }) : [];
-      const fps = useProjectStore.getState().activeProject?.settings.fps ?? 30;
-      const replacement = replacementTimeline(remappedTracks, pool, requireTimelineTime, fps);
-      if (!replacement) continue;
-      store.replaceTimeline(replacement);
-      applied.push("complete JSX composition");
-      break;
-    }
     if (operation.action === "replace_timeline") {
       const fps = useProjectStore.getState().activeProject?.settings.fps ?? 30;
       const replacement = replacementTimeline(operation.tracks, pool, requireTimelineTime, fps);
@@ -852,6 +815,8 @@ function componentSchema(value: unknown): Array<{ name: string; type: "string" |
 }
 
 function isSafeComponentCode(code: string, requireTimelineTime = false) {
-  const timeDriven = !requireTimelineTime || /props\.localTime\b/.test(code);
-  return timeDriven && code.length <= 16_000 && validateGeneratedComponentSource(code).compatible;
+  const timeDriven = !requireTimelineTime
+    || /props\.localTime\b/.test(code)
+    || /\{[^}]*\blocalTime\b[^}]*\}\s*=\s*props\b/.test(code);
+  return timeDriven && code.length <= 100_000 && validateGeneratedComponentSource(code).compatible;
 }

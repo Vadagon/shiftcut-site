@@ -2,16 +2,16 @@ import type { ComponentArtifact, MediaFileData } from "@/lib/storage/types";
 import type { ProjectSettings } from "@/types/project";
 import type { TimelineElement, TimelineTrack } from "@/types/timeline";
 
-export const SHIFT_CUT_COMPOSITION_FORMAT = "shiftcut-composition/v1";
+export const SHIFT_CUT_PROJECT_FORMAT = "shiftcut-project/v2";
 
-type CompositionInput = {
+type CompactProjectInput = {
   project: { name: string; revision: number; settings: ProjectSettings };
   tracks: TimelineTrack[];
   components: Record<string, ComponentArtifact>;
   assets: MediaFileData[];
 };
 
-function quoted(value: string) {
+function stringAttribute(value: string) {
   return `{${JSON.stringify(value)}}`;
 }
 
@@ -19,8 +19,17 @@ function raw(value: string) {
   return `String.raw\`${value.replace(/`/g, "\\`").replace(/\$\{/g, "\\${")}\``;
 }
 
-function number(value: number | undefined, fallback = 0) {
-  return Number.isFinite(value) ? String(value) : String(fallback);
+function frameTime(value: number, fps: number, minimumFrames = 0) {
+  return Math.max(minimumFrames, Math.round(value * fps)) / fps;
+}
+
+function parameterAttribute(name: string, value: unknown) {
+  if (!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(name) || value === undefined) return "";
+  if (typeof value === "string") return ` ${name}=${stringAttribute(value)}`;
+  if (typeof value === "number" && Number.isFinite(value)) return ` ${name}={${value}}`;
+  if (typeof value === "boolean") return ` ${name}={${value}}`;
+  if (value === null || Array.isArray(value) || typeof value === "object") return ` ${name}={${raw(JSON.stringify(value))}}`;
+  return "";
 }
 
 function elementTag(element: TimelineElement) {
@@ -31,54 +40,48 @@ function elementTag(element: TimelineElement) {
   return "Text";
 }
 
-function frameTime(value: number, fps: number, minimumFrames = 0) {
-  return Math.max(minimumFrames, Math.round(value * fps)) / fps;
-}
-
 function serializeElement(element: TimelineElement, fps: number) {
   const tag = elementTag(element);
   const identity = element.componentId
-    ? ` componentId=${quoted(element.componentId)} componentVersion={${number(element.componentVersion, 1)}}`
+    ? ` componentId=${stringAttribute(element.componentId)} componentVersion={${element.componentVersion ?? 1}}`
     : element.mediaId
-      ? ` assetId=${quoted(element.mediaId)}`
+      ? ` assetId=${stringAttribute(element.mediaId)}`
       : "";
   const duration = frameTime(element.duration, fps, 1);
   const trimStart = Math.min(frameTime(element.trimStart, fps), Math.max(0, duration - 1 / fps));
   const trimEnd = Math.min(frameTime(element.trimEnd, fps), Math.max(0, duration - trimStart - 1 / fps));
-  return `        <${tag} id=${quoted(element.id)} name=${quoted(element.name)}${identity} start={${number(frameTime(element.startTime, fps))}} duration={${number(duration)}} trimStart={${number(trimStart)}} trimEnd={${number(trimEnd)}} params={${raw(JSON.stringify(element.params))}} />`;
+  const params = Object.entries(element.params).map(([name, value]) => parameterAttribute(name, value)).join("");
+  return `      <${tag} elementId=${stringAttribute(element.id)} name=${stringAttribute(element.name)}${identity} start={${frameTime(element.startTime, fps)}} duration={${duration}} trimStart={${trimStart}} trimEnd={${trimEnd}}${params} />`;
 }
 
-export function serializeShiftCutComposition({ project, tracks, components, assets }: CompositionInput) {
+export function serializeCompactProject({ project, tracks, components, assets }: CompactProjectInput) {
   const fps = Math.max(1, project.settings.fps);
   const referencedIds = new Set(tracks.flatMap((track) => track.elements.flatMap((element) => element.componentId ? [element.componentId] : [])));
-  const definitions = Object.values(components)
+  const assetRows = assets.map((asset) =>
+    `    <Asset id=${stringAttribute(asset.id)} name=${stringAttribute(asset.name)} kind=${stringAttribute(asset.kind)}${asset.duration === undefined ? "" : ` duration={${asset.duration}}`}${asset.width === undefined ? "" : ` width={${asset.width}}`}${asset.height === undefined ? "" : ` height={${asset.height}}`} />`,
+  ).join("\n");
+  const componentRows = Object.values(components)
     .filter((component) => referencedIds.has(component.id))
     .sort((a, b) => a.id.localeCompare(b.id))
-    .map((component) => [
-      `      <ComponentDefinition id=${quoted(component.id)} version={${component.version}} name=${quoted(component.name)} description=${quoted(component.description)}`,
-      `        propsSchema={${raw(JSON.stringify(component.propsSchema))}}`,
-      `        code={${raw(component.code)}}`,
-      "      />",
-    ].join("\n"));
-  const assetRows = assets
-    .map((asset) => `      <Asset id=${quoted(asset.id)} name=${quoted(asset.name)} kind=${quoted(asset.kind)}${asset.duration === undefined ? "" : ` duration={${number(asset.duration)}}`}${asset.width === undefined ? "" : ` width={${number(asset.width)}}`}${asset.height === undefined ? "" : ` height={${number(asset.height)}}`} />`)
-    .join("\n");
+    .map((component) =>
+      `    <ComponentSummary id=${stringAttribute(component.id)} version={${component.version}} name=${stringAttribute(component.name)} description=${stringAttribute(component.description)} propsSchema={${raw(JSON.stringify(component.propsSchema))}} />`,
+    ).join("\n");
   const trackRows = tracks.map((track) => {
     const tag = track.type === "audio" ? "AudioTrack" : "VisualTrack";
-    const elements = track.elements.map((element) => serializeElement(element, fps)).join("\n");
-    return `      <${tag} id=${quoted(track.id)} name=${quoted(track.name)} muted={${track.muted}} hidden={${track.hidden}} locked={${track.locked}}>\n${elements}\n      </${tag}>`;
+    return `    <${tag} id=${stringAttribute(track.id)} name=${stringAttribute(track.name)} muted={${track.muted}} hidden={${track.hidden}} locked={${track.locked}}>
+${track.elements.map((element) => serializeElement(element, fps)).join("\n")}
+    </${tag}>`;
   }).join("\n");
   const { width, height, background = "#000000" } = project.settings;
-
-  return `<ShiftCutComposition format=${quoted(SHIFT_CUT_COMPOSITION_FORMAT)} name=${quoted(project.name)} revision={${project.revision}}>
+  return `<ShiftCutProject format=${stringAttribute(SHIFT_CUT_PROJECT_FORMAT)} name=${stringAttribute(project.name)} revision={${project.revision}} width={${width}} height={${height}} fps={${fps}} background=${stringAttribute(background)}>
   <Assets>
 ${assetRows}
   </Assets>
-  <ComponentDefinitions>
-${definitions.join("\n")}
-  </ComponentDefinitions>
-  <Project width={${number(width)}} height={${number(height)}} fps={${number(fps)}} background=${quoted(background)}>
+  <Components>
+${componentRows}
+  </Components>
+  <Timeline>
 ${trackRows}
-  </Project>
-</ShiftCutComposition>`;
+  </Timeline>
+</ShiftCutProject>`;
 }
