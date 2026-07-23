@@ -77,7 +77,7 @@ export const plans = [
     features: [
       "Everything in AI Copilot monthly",
       "3-day free trial — cancel before it ends, pay nothing",
-      "Two months free vs. paying monthly",
+      "Six months free vs. paying monthly",
       "One yearly payment, cancel anytime",
     ],
   },
