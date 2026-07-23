@@ -9,11 +9,10 @@ import { useComponentStore } from "@/stores/component-store";
 import { storageService } from "@/lib/storage/storage-service";
 import type { ChatMemoryData } from "@/lib/storage/types";
 import { uid } from "@/lib/utils";
-import { elementEnd, type ElementParams, type TimelineElement, type TimelineTrack, type TrackType } from "@/types/timeline";
-import { validateGeneratedComponentSource } from "@/lib/generated-component-contract";
+import { type TimelineElement, type TimelineTrack } from "@/types/timeline";
 import { serializeCompactProject } from "@/lib/composition-dsl";
 import { parseCompactProject } from "@/lib/composition-dsl-parser";
-import { acceptComponentStage, acceptTimelineStage, buildComponentSystemPrompt, buildTimelineSystemPrompt } from "@/lib/ai-composition-protocol";
+import { buildFocusedComponentPrompt, buildTransactionPrompt, parseComponentResult, parseEditorTransaction, simulateTransaction, type ComponentResult, type EditorTransaction } from "@/lib/ai-transaction-protocol";
 
 type ChatMessage = {
   id: string;
@@ -22,15 +21,6 @@ type ChatMessage = {
   tools?: string;
   artifact?: Record<string, unknown>;
   status?: "pending" | "failed" | "complete";
-  error?: string;
-};
-
-type TimelineOperation = Record<string, unknown> & { action?: string };
-type ChatResponse = {
-  reply?: string;
-  content?: string;
-  expectedRevision?: number | null;
-  operations?: TimelineOperation[];
   error?: string;
 };
 
@@ -142,7 +132,6 @@ export function AiChat() {
   const sendRequest = async (value: string, requestId?: string) => {
     if (!value || isSending) return;
     const animationRequested = /\b(?:animate|animation|explode|explosion|burst|particle|motion|bounce|slide|zoom|transition)\b/i.test(value);
-    const restructureRequested = /\b(?:restructure|resturcture|reorganize|reorganise|clean up|cleanup|compact)\b.*\b(?:timeline|tracks?)\b|\b(?:timeline|tracks?)\b.*\b(?:restructure|resturcture|reorganize|reorganise|clean up|cleanup|compact)\b/i.test(value);
     const requestSnapshot = project ? projectSnapshot(project, tracks, pool, components, selectedElementId, value) : undefined;
     const messageId = requestId ?? uid("msg");
     let transportArtifact: Record<string, unknown> = {
@@ -174,8 +163,9 @@ export function AiChat() {
       setRequestPhase("thinking");
       setWorkLabel("Analyzing timeline and project");
       if (!requestSnapshot) throw new Error("No active project composition is available.");
-      const systemPrompt = buildTimelineSystemPrompt({
+      const systemPrompt = buildTransactionPrompt({
         projectName: requestSnapshot.name,
+        revision: requestSnapshot.revision,
         compactProject: requestSnapshot.compactProject,
         memory: context.memory?.summary ?? "",
         selectedElementId: requestSnapshot.selectedElementId,
@@ -238,57 +228,55 @@ export function AiChat() {
         throw new Error(`The AI ${stage} response failed acceptance after ${MAX_RESPONSE_ATTEMPTS} attempts: ${lastAcceptanceError}`);
       }
 
-      const firstStage = await runStage("timeline", "Analyzing and editing timeline", baseMessages, (raw) => acceptTimelineStage({
-        rawContent: raw,
-        compactProject: requestSnapshot.compactProject,
-        userRequest: value,
-        selectedElementId: requestSnapshot.selectedElementId,
-        suggestedElementId: requestSnapshot.suggestedElementId,
-        requireComponentEdit: animationRequested,
-      }));
-      let result: ChatResponse;
-      if (firstStage.type === "no-changes") {
-        result = { reply: firstStage.reply, expectedRevision: firstStage.expectedRevision, operations: [] };
-      } else if (firstStage.type === "timeline-edit") {
-        result = { reply: firstStage.reply, expectedRevision: firstStage.expectedRevision, operations: [{ action: "replace_timeline", tracks: firstStage.tracks, compositionSource: firstStage.source }] };
-      } else {
-        setWorkLabel(`Loading component source: ${firstStage.name ?? firstStage.componentId}`);
-        const revisionBeforeFocus = useProjectStore.getState().activeProject?.revision;
-        if (revisionBeforeFocus !== requestSnapshot.revision) throw new Error("The project changed before the focused component request. Retry with the current revision.");
-        const artifact = firstStage.componentId.startsWith("new:") ? undefined : useComponentStore.getState().get(firstStage.componentId);
-        if (!firstStage.componentId.startsWith("new:") && !artifact) throw new Error("The requested component source is unavailable in the current revision.");
-        const componentPrompt = buildComponentSystemPrompt({ compactProject: requestSnapshot.compactProject, originalRequest: value, request: firstStage, artifact });
-        const componentStage = await runStage("component", `Component requested · editing ${artifact?.name ?? firstStage.name ?? firstStage.componentId}`, [{ role: "system", content: componentPrompt }, { role: "user", content: value }], (raw) =>
-          acceptComponentStage({ rawContent: raw, compactProject: requestSnapshot.compactProject, request: firstStage, requireAnimation: animationRequested }),
-        );
-        const operation = artifact
-          ? { action: "update_component", elementId: firstStage.elementId, component: componentStage.component, compositionSource: componentStage.source }
-          : { action: "add_component", trackId: firstStage.trackId, name: firstStage.name ?? componentStage.component.name, startTime: firstStage.start ?? 0, duration: firstStage.duration ?? 5, params: firstStage.params, component: componentStage.component, compositionSource: componentStage.source };
-        result = { reply: componentStage.reply, expectedRevision: componentStage.expectedRevision, operations: [operation] };
+      const plan = await runStage("timeline", "Planning editor transaction", baseMessages, (raw) => parseEditorTransaction(raw, requestSnapshot.revision));
+      let stagedTracks = structuredClone(tracks);
+      const componentResults: ComponentResult[] = [];
+      if (plan.type === "editor_transaction") {
+        const simulation = simulateTransaction({ transaction: plan, tracks, assets: pool, fps: requestSnapshot.settings.fps });
+        stagedTracks = simulation.tracks;
+        for (const [jobIndex, job] of simulation.componentJobs.entries()) {
+          const revisionBeforeFocus = useProjectStore.getState().activeProject?.revision;
+          if (revisionBeforeFocus !== requestSnapshot.revision) throw new Error("The project changed before component generation. Retry with the current revision.");
+          const original = tracks.flatMap((track) => track.elements).find((element) => element.id === job.elementId);
+          const artifact = original?.componentId ? useComponentStore.getState().get(original.componentId) : undefined;
+          if (job.kind === "edit" && (!original || !artifact)) throw new Error(`Component source for ${job.elementId} is unavailable.`);
+          const componentPrompt = buildFocusedComponentPrompt({
+            revision: requestSnapshot.revision,
+            job,
+            artifact,
+            element: original,
+            projectWidth: requestSnapshot.settings.width,
+            projectHeight: requestSnapshot.settings.height,
+            fps: requestSnapshot.settings.fps,
+          });
+          const generated = await runStage(
+            "component",
+            `Generating component ${jobIndex + 1}/${simulation.componentJobs.length}`,
+            [{ role: "system", content: componentPrompt }, { role: "user", content: job.instruction }],
+            (raw) => parseComponentResult(raw, { expectedRevision: requestSnapshot.revision, elementId: job.elementId, requireAnimation: animationRequested }),
+          );
+          componentResults.push(generated);
+        }
       }
-      transportArtifact = { ...transportArtifact, response: { attempts: [...attempts], finalResult: result, completedAt: currentTimestamp() } };
+      transportArtifact = { ...transportArtifact, response: { attempts: [...attempts], finalResult: { plan, componentResults }, completedAt: currentTimestamp() } };
       setWorkLabel("Applying accepted changes");
       setRequestPhase("thinking");
       setRetryAttempt(null);
-      const reply = result.reply ?? result.content;
-      if (!reply) throw new Error(result.error ?? "AI response failed.");
+      const reply = componentResults.at(-1)?.reply ?? plan.reply;
       const currentRevision = useProjectStore.getState().activeProject?.revision;
-      const revisionMatches = currentRevision !== undefined && result.expectedRevision === currentRevision;
-      const applied = revisionMatches
-        ? applyOperations(result.operations ?? [], animationRequested, restructureRequested)
+      const revisionMatches = currentRevision !== undefined && plan.expectedRevision === currentRevision;
+      const applied = revisionMatches && plan.type === "editor_transaction"
+        ? commitTransaction(plan, stagedTracks, componentResults)
         : [];
-      if (applied.length) repairTimelineOverlaps();
-      if ((result.operations?.length ?? 0) > 0 && !applied.length) {
-        throw new Error(revisionMatches
-          ? "The AI edit payload could not be applied. Nothing was changed; retry the request."
-          : "The project changed while AI was responding. Nothing was changed; retry with the current revision.");
-      }
+      if (plan.type === "editor_transaction" && !applied.length) throw new Error(revisionMatches
+        ? "The accepted transaction produced no project change. Nothing was changed."
+        : "The project changed while AI was responding. Nothing was changed; retry with the current revision.");
       const resultingTimeline = timelineContext(useTimelineStore.getState().tracks, useComponentStore.getState().components, true);
       updateMessage(messageId, { status: "complete", error: undefined, artifact: { transport: transportArtifact, editorResult: { receivedAtRevision: currentRevision ?? null, revisionMatches, applied, timelineAfter: resultingTimeline } } });
       appendMessage({ id: uid("msg"), role: "assistant", body: reply, tools: applied.length ? `Applied: ${applied.join(", ")}` : undefined, artifact: {
         transport: transportArtifact,
         request: requestSnapshot,
-        response: { expectedRevision: result.expectedRevision ?? null, receivedAtRevision: currentRevision ?? null, revisionMatches, operations: result.operations ?? [], applied, timelineAfter: resultingTimeline },
+        response: { expectedRevision: plan.expectedRevision, receivedAtRevision: currentRevision ?? null, revisionMatches, transaction: plan, componentResults, applied, timelineAfter: resultingTimeline },
       } });
     } catch (error) {
       const message = error instanceof Error ? error.message : "AI response failed.";
@@ -449,16 +437,16 @@ function HistoryDrawer({ messages, onClose }: { messages: ChatMessage[]; onClose
 }
 
 const ACCEPTANCE_RULES = [
-  "Response root matches the active stage",
-  "Expected revision matches the compact project",
-  "Timeline edit returns a complete ordered track list",
-  "References resolve against the compact project",
-  "Component target and base identifiers remain continuous across stages",
+  "Response is one valid JSON object for the active stage",
+  "Expected revision matches the request snapshot",
+  "Transaction contains only supported bounded operations",
+  "Element, track, asset, and temporary references resolve",
+  "The complete transaction simulates before any timeline mutation",
   "Generated component compiles and passes runtime safety checks",
   "Timing is finite, positive, frame-aligned, and trims are valid",
   "Elements do not overlap within a track",
   "Requested animation is deterministic and driven by localTime",
-  "Browser revision still matches before atomic application",
+  "Browser revision still matches before one atomic timeline commit",
 ];
 
 type DebugLogInput = {
@@ -580,6 +568,11 @@ function summarizeAttempt(attempt: Record<string, unknown>, index: number) {
 }
 
 function firstTag(source: string) {
+  const candidate = source.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  try {
+    const parsed = JSON.parse(candidate) as { type?: unknown };
+    if (typeof parsed?.type === "string") return parsed.type;
+  } catch { /* Older JSX logs remain readable. */ }
   return source.match(/^\s*(?:```(?:jsx|tsx|javascript)?\s*)?<([A-Za-z][\w]*)/)?.[1] ?? null;
 }
 
@@ -767,7 +760,12 @@ function HistoryArtifact({ artifact, index, copiedKey, onCopy }: { artifact?: Re
   if (!artifact) return <p className="mt-3 text-[10px] leading-4 text-[#89857e]">Structured component and timeline details are available for new requests.</p>;
   const response = asRecord(artifact.response);
   const operations = Array.isArray(response?.operations) ? response.operations.map(asRecord).filter(Boolean) as Record<string, unknown>[] : [];
-  const components = operations.flatMap((operation) => {
+  const transactionComponents = Array.isArray(response?.componentResults)
+    ? response.componentResults.map(asRecord).filter(Boolean).flatMap((component) => typeof component?.code === "string"
+      ? [{ name: typeof component.name === "string" ? component.name : "GeneratedComponent", description: typeof component.description === "string" ? component.description : "", code: component.code }]
+      : [])
+    : [];
+  const components = [...transactionComponents, ...operations.flatMap((operation) => {
     if (Array.isArray(operation.componentDefinitions)) {
       return operation.componentDefinitions.map(asRecord).filter(Boolean).flatMap((definition) => typeof definition?.code === "string"
         ? [{ name: typeof definition.name === "string" ? definition.name : "GeneratedComponent", description: typeof definition.description === "string" ? definition.description : "", code: definition.code }]
@@ -776,7 +774,7 @@ function HistoryArtifact({ artifact, index, copiedKey, onCopy }: { artifact?: Re
     const component = asRecord(operation.component);
     const code = typeof component?.code === "string" ? component.code : null;
     return code ? [{ name: typeof component?.name === "string" ? component.name : "GeneratedComponent", description: typeof component?.description === "string" ? component.description : "", code }] : [];
-  });
+  })];
   return (
     <div className="mt-3 space-y-2 border-t border-[#d5d2cc] pt-3">
       {components.length > 0 && <details>
@@ -856,107 +854,37 @@ function timelineContext(tracks: TimelineTrack[], components: ReturnType<typeof 
   }));
 }
 
-function applyOperations(operations: TimelineOperation[], requireTimelineTime = false, removeEmptyTracks = false) {
+function commitTransaction(plan: Extract<EditorTransaction, { type: "editor_transaction" }>, stagedTracks: TimelineTrack[], componentResults: ComponentResult[]) {
   const store = useTimelineStore.getState();
-  const pool = useMediaStore.getState().pool;
-  const applied: string[] = [];
-  for (const operation of operations.slice(0, 12)) {
-    if (!operation || typeof operation.action !== "string") continue;
-    if (operation.action === "replace_timeline") {
-      const fps = useProjectStore.getState().activeProject?.settings.fps ?? 30;
-      const replacement = replacementTimeline(operation.tracks, pool, requireTimelineTime, fps);
-      if (!replacement) continue;
-      if (sameTimeline(store.tracks, replacement)) continue;
-      store.replaceTimeline(replacement);
-      applied.push("entire timeline");
-      break;
+  const next = structuredClone(stagedTracks);
+  for (const result of componentResults) {
+    let target: TimelineElement | undefined;
+    for (const track of next) {
+      target = track.elements.find((element) => element.id === result.elementId);
+      if (target) break;
     }
-    if (operation.action === "add_component") {
-      const component = asRecord(operation.component);
-      const code = typeof component?.code === "string" ? component.code : "";
-      if (!isSafeComponentCode(code, requireTimelineTime)) continue;
-      const startTime = nonNegative(operation.startTime);
-      const duration = Math.max(0.1, finite(operation.duration, 3));
-      const trackId = placementTrack("media", operation.trackId, startTime, duration);
-      const params = componentParams(operation.params);
-      const name = stringValue(operation.name, "AI overlay");
-      const artifact = useComponentStore.getState().upsert({ name: stringValue(component?.name, "GeneratedComponent"), description: stringValue(component?.description, "AI-generated overlay"), code, propsSchema: componentSchema(component?.propsSchema) });
-      const id = store.addElementToTrack(trackId, {
-        type: "text", name, component: "GeneratedReactComponent",
-        componentId: artifact.id,
-        componentVersion: artifact.version,
-        startTime, duration, trimStart: 0, trimEnd: 0,
-        params: { ...defaultParams(), ...params },
-      });
-      store.selectElement(id);
-      usePanelStore.getState().setActive("inspector");
-      applied.push("React overlay");
-    }
-    if (operation.action === "update_params") {
-      const elementId = typeof operation.elementId === "string" ? operation.elementId : "";
-      if (!store.findElement(elementId)) continue;
-      store.updateElementParams(elementId, componentParams(operation.params));
-      store.selectElement(elementId);
-      usePanelStore.getState().setActive("inspector");
-      applied.push("properties");
-    }
-    if (operation.action === "update_component") {
-      const elementId = typeof operation.elementId === "string" ? operation.elementId : "";
-      const found = store.findElement(elementId);
-      const component = asRecord(operation.component);
-      const code = typeof component?.code === "string" ? component.code : "";
-      if (!found || !isSafeComponentCode(code, requireTimelineTime)) continue;
-      const existing = found.element.componentId ? useComponentStore.getState().get(found.element.componentId) : undefined;
-      const artifact = useComponentStore.getState().upsert({ name: stringValue(component?.name, existing?.name ?? "GeneratedComponent"), description: stringValue(component?.description, existing?.description ?? "AI-generated overlay"), code, propsSchema: componentSchema(component?.propsSchema) }, found.element.componentId);
-      store.updateElementComponent(elementId, { componentId: artifact.id, componentVersion: artifact.version });
-      store.selectElement(elementId);
-      usePanelStore.getState().setActive("inspector");
-      applied.push("React component");
-    }
-    if (operation.action === "move_element") {
-      const elementId = typeof operation.elementId === "string" ? operation.elementId : "";
-      const found = store.findElement(elementId);
-      if (!found) continue;
-      const startTime = nonNegative(operation.startTime);
-      const duration = elementEnd(found.element) - found.element.startTime;
-      const trackId = placementTrack(found.track.type, operation.trackId, startTime, duration, elementId);
-      if (trackId === found.track.id) store.updateElementStartTime(elementId, startTime);
-      else store.moveElementToTrack(elementId, trackId, startTime);
-      store.selectElement(elementId);
-      usePanelStore.getState().setActive("inspector");
-      applied.push("timeline position");
-    }
-    if (operation.action === "remove_element") {
-      const elementId = typeof operation.elementId === "string" ? operation.elementId : "";
-      if (!store.findElement(elementId)) continue;
-      store.removeElement(elementId);
-      applied.push("timeline element");
-    }
-    if (operation.action === "add_media") {
-      const mediaId = typeof operation.mediaId === "string" ? operation.mediaId : "";
-      const media = pool.find((asset) => asset.id === mediaId);
-      if (!media) continue;
-      const component = media.kind === "video" ? "VideoPlayer" : media.kind === "audio" ? "AudioPlayer" : "ImagePlayer";
-      const startTime = nonNegative(operation.startTime);
-      const duration = Math.max(0.1, media.duration ?? 5);
-      const trackId = placementTrack(media.kind === "audio" ? "audio" : "media", operation.trackId, startTime, duration);
-      const id = store.addElementToTrack(trackId, {
-        type: "media", mediaId, name: media.name, component,
-        startTime, duration, trimStart: 0, trimEnd: 0,
-        params: defaultParams(),
-      });
-      store.selectElement(id);
-      usePanelStore.getState().setActive("inspector");
-      applied.push("media asset");
-    }
+    if (!target) return [];
+    const existing = target.componentId ? useComponentStore.getState().get(target.componentId) : undefined;
+    const artifact = useComponentStore.getState().upsert({
+      name: result.name,
+      description: result.description,
+      code: result.code,
+      propsSchema: result.propsSchema,
+    }, existing?.id);
+    target.component = "GeneratedReactComponent";
+    target.type = "text";
+    target.componentId = artifact.id;
+    target.componentVersion = artifact.version;
+    target.name = target.name || artifact.name;
   }
-  // This cleanup is deliberately limited to an accepted AI restructuring
-  // request. Normal loading and ordinary edits never remove empty tracks.
-  if (removeEmptyTracks && applied.length > 0 && store.tracks.some((track) => track.elements.length === 0)) {
-    store.removeEmptyTracks();
-    applied.push("empty tracks");
+  if (sameTimeline(store.tracks, next)) return [];
+  store.replaceTimeline(next, plan.summary);
+  const selected = componentResults.at(-1)?.elementId;
+  if (selected) {
+    store.selectElement(selected);
+    usePanelStore.getState().setActive("inspector");
   }
-  return [...new Set(applied)];
+  return [`transaction: ${plan.operations.length} operation${plan.operations.length === 1 ? "" : "s"}`];
 }
 
 function sameTimeline(left: TimelineTrack[], right: TimelineTrack[]) {
@@ -984,159 +912,5 @@ function sameTimeline(left: TimelineTrack[], right: TimelineTrack[]) {
   return JSON.stringify(comparable(left)) === JSON.stringify(comparable(right));
 }
 
-function replacementTimeline(value: unknown, pool: ReturnType<typeof useMediaStore.getState>["pool"], requireTimelineTime: boolean, fps: number): TimelineTrack[] | null {
-  if (!Array.isArray(value) || value.length === 0 || value.length > 32) return null;
-  const tracks: TimelineTrack[] = [];
-  const usedTrackIds = new Set<string>();
-  const usedElementIds = new Set<string>();
-  for (const rawTrack of value) {
-    const track = asRecord(rawTrack);
-    const type: TrackType = track?.type === "audio" ? "audio" : "media";
-    const rawElements = Array.isArray(track?.elements) ? track.elements : [];
-    const elements: TimelineElement[] = [];
-    for (const rawElement of rawElements) {
-      const item = asRecord(rawElement);
-      if (!item) continue;
-      const startTime = frameSeconds(nonNegative(item.startTime), fps);
-      const duration = Math.max(1 / fps, frameSeconds(Math.max(0.1, finite(item.duration, 3)), fps));
-      const generated = asRecord(item.generatedComponent);
-      const requestedId = typeof item.id === "string" && item.id.trim() && !usedElementIds.has(item.id) ? item.id : uid("el");
-      usedElementIds.add(requestedId);
-      const trimStart = Math.min(Math.max(0, duration - 0.1), nonNegative(item.trimStart));
-      const trimEnd = Math.min(Math.max(0, duration - trimStart - 0.1), nonNegative(item.trimEnd));
-      const componentId = typeof item.componentId === "string" ? item.componentId : "";
-      const existingArtifact = componentId ? useComponentStore.getState().get(componentId) : undefined;
-      if (componentId && !existingArtifact) return null;
-      if (existingArtifact) {
-        if (type !== "media") return null;
-        elements.push({
-          id: requestedId,
-          type: "text",
-          name: stringValue(item.name, existingArtifact.name),
-          component: "GeneratedReactComponent",
-          componentId: existingArtifact.id,
-          componentVersion: typeof item.componentVersion === "number" ? item.componentVersion : existingArtifact.version,
-          startTime,
-          duration,
-          trimStart,
-          trimEnd,
-          params: { ...defaultParams(), ...componentParams(item.params) },
-        });
-        continue;
-      }
-      if (generated) {
-        const code = typeof generated.code === "string" ? generated.code : "";
-        if (!isSafeComponentCode(code, requireTimelineTime) || type !== "media") return null;
-        const artifact = useComponentStore.getState().upsert({ name: stringValue(generated.name, "GeneratedComponent"), description: stringValue(generated.description, "AI-generated overlay"), code, propsSchema: componentSchema(generated.propsSchema) });
-        elements.push({ id: requestedId, type: "text", name: stringValue(item.name, artifact.name), component: "GeneratedReactComponent", componentId: artifact.id, componentVersion: artifact.version, startTime, duration, trimStart, trimEnd, params: { ...defaultParams(), ...componentParams(item.params) } });
-        continue;
-      }
-      if (item.component === "TextPlayer" && type === "media") {
-        elements.push({
-          id: requestedId,
-          type: "text",
-          name: stringValue(item.name, "Text"),
-          component: "TextPlayer",
-          startTime,
-          duration,
-          trimStart,
-          trimEnd,
-          params: { ...defaultParams(), ...componentParams(item.params) },
-        });
-        continue;
-      }
-      const mediaId = typeof item.mediaId === "string" ? item.mediaId : "";
-      const media = pool.find((asset) => asset.id === mediaId);
-      if (!media || (type === "audio") !== (media.kind === "audio")) return null;
-      const component = media.kind === "audio" ? "AudioPlayer" : media.kind === "video" ? "VideoPlayer" : "ImagePlayer";
-      const sourceDuration = Math.max(0.1, Math.min(duration, media.duration ?? duration));
-      const mediaTrimStart = Math.min(Math.max(0, sourceDuration - 0.1), trimStart);
-      const mediaTrimEnd = Math.min(Math.max(0, sourceDuration - mediaTrimStart - 0.1), trimEnd);
-      elements.push({ id: requestedId, type: "media", mediaId, name: stringValue(item.name, media.name), component, startTime, duration: sourceDuration, trimStart: mediaTrimStart, trimEnd: mediaTrimEnd, params: { ...defaultParams(), ...componentParams(item.params) } });
-    }
-    const ordered = [...elements].sort((a, b) => a.startTime - b.startTime);
-    const frameTolerance = 1 / fps + Number.EPSILON;
-    const normalized: TimelineElement[] = [];
-    for (const element of ordered) {
-      const previous = normalized[normalized.length - 1];
-      if (!previous || element.startTime >= elementEnd(previous)) {
-        normalized.push(element);
-        continue;
-      }
-      const overlap = elementEnd(previous) - element.startTime;
-      if (overlap > frameTolerance) return null;
-      normalized.push({ ...element, startTime: elementEnd(previous) });
-    }
-    const requestedTrackId = typeof track?.id === "string" && track.id.trim() && !usedTrackIds.has(track.id) ? track.id : uid("track");
-    usedTrackIds.add(requestedTrackId);
-    tracks.push({ id: requestedTrackId, name: stringValue(track?.name, type === "audio" ? "Audio" : "Video"), type, elements: normalized, muted: track?.muted === true, hidden: track?.hidden === true, locked: track?.locked === true });
-  }
-  return tracks;
-}
-
-function placementTrack(type: TrackType, requestedTrackId: unknown, startTime: number, duration: number, exceptElementId?: string) {
-  const store = useTimelineStore.getState();
-  const fits = (track: TimelineTrack) => track.type === type && !track.elements.some((element) => element.id !== exceptElementId && startTime < elementEnd(element) && startTime + duration > element.startTime);
-  const requested = typeof requestedTrackId === "string" ? store.tracks.find((track) => track.id === requestedTrackId) : undefined;
-  if (requested && fits(requested)) return requested.id;
-  const openTrack = store.tracks.find(fits);
-  return openTrack?.id ?? store.addTrack(type);
-}
-
-function repairTimelineOverlaps() {
-  const store = useTimelineStore.getState();
-  for (const track of store.tracks) {
-    let occupiedUntil = -Infinity;
-    const elements = [...track.elements].sort((a, b) => a.startTime - b.startTime);
-    for (const element of elements) {
-      const duration = elementEnd(element) - element.startTime;
-      if (element.startTime < occupiedUntil) {
-        const targetTrackId = placementTrack(track.type, undefined, element.startTime, duration, element.id);
-        store.moveElementToTrack(element.id, targetTrackId, element.startTime);
-      } else {
-        occupiedUntil = elementEnd(element);
-      }
-    }
-  }
-}
-
 function asRecord(value: unknown) { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null; }
 function finite(value: unknown, fallback: number) { return typeof value === "number" && Number.isFinite(value) ? value : fallback; }
-function nonNegative(value: unknown) { return Math.max(0, finite(value, 0)); }
-function frameSeconds(value: number, fps: number) { return Math.round(value * Math.max(1, fps)) / Math.max(1, fps); }
-function stringValue(value: unknown, fallback: string) { return typeof value === "string" && value.trim() ? value.slice(0, 120) : fallback; }
-function defaultParams(): ElementParams { return { x: 0, y: 0, scale: 1, rotation: 0, opacity: 1, zIndex: 1, volume: 1 }; }
-
-function componentParams(value: unknown): Partial<ElementParams> {
-  const record = asRecord(value);
-  if (!record) return {};
-  const forbidden = new Set(["__proto__", "prototype", "constructor"]);
-  const clean = Object.fromEntries(Object.entries(record).filter(([key, item]) =>
-    /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(key)
-    && !forbidden.has(key)
-    && item !== undefined
-    && (() => { try { return JSON.stringify(item).length <= 20_000; } catch { return false; } })(),
-  ));
-  try {
-    return JSON.parse(JSON.stringify(clean)) as Partial<ElementParams>;
-  } catch {
-    return {};
-  }
-}
-
-function componentSchema(value: unknown): Array<{ name: string; type: "string" | "number" | "boolean" | "color"; default?: unknown }> {
-  if (!Array.isArray(value)) return [];
-  return value.slice(0, 20).flatMap((item) => {
-    const record = asRecord(item);
-    const name = typeof record?.name === "string" ? record.name.slice(0, 60) : "";
-    const type = record?.type;
-    return name && (type === "string" || type === "number" || type === "boolean" || type === "color") ? [{ name, type, default: record?.default }] : [];
-  });
-}
-
-function isSafeComponentCode(code: string, requireTimelineTime = false) {
-  const timeDriven = !requireTimelineTime
-    || /props\.localTime\b/.test(code)
-    || /\{[^}]*\blocalTime\b[^}]*\}\s*=\s*props\b/.test(code);
-  return timeDriven && code.length <= 100_000 && validateGeneratedComponentSource(code).compatible;
-}

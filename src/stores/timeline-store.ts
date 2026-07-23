@@ -87,7 +87,7 @@ interface TimelineStore {
   updateElementTrim: (elementId: string, trimStart: number, trimEnd: number, startTime: number) => void;
   updateElementParams: (elementId: string, patch: Partial<ElementParams>) => void;
   updateElementComponent: (elementId: string, patch: Pick<TimelineElement, "componentId" | "componentVersion">) => void;
-  replaceTimeline: (tracks: TimelineTrack[]) => void;
+  replaceTimeline: (tracks: TimelineTrack[], summary?: string) => void;
   removeEmptyTracks: () => void;
   splitElement: (elementId: string, atTime: number) => void;
   duplicateElement: (elementId: string) => void;
@@ -264,9 +264,9 @@ export const useTimelineStore = create<TimelineStore>((set, get) => {
       commit((tracks) => tracks.map((t) => ({ ...t, elements: t.elements.map((e) => (e.id === elementId ? { ...e, ...patch } : e)) })));
     },
 
-    replaceTimeline: (tracks) => {
+    replaceTimeline: (tracks, summary = "Timeline replaced") => {
       const next = arrangeTracks(structuredClone(tracks));
-      commit(() => next, "Timeline replaced");
+      commit(() => next, summary);
       set({ selectedElementId: null, dragState: emptyDrag });
     },
 
