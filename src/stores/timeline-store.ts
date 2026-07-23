@@ -43,13 +43,12 @@ function defaultTracks(): TimelineTrack[] {
 // Timeline order is compositing order from top to bottom: one visual stack,
 // then audio. Higher numbered visual lanes are above V1.
 function arrangeTracks(tracks: TimelineTrack[]) {
-  const ordinal = (track: TimelineTrack) => Number((track.name.match(/(\d+)\s*$/)?.[1] ?? track.id.match(/-(\d+)$/)?.[1] ?? "0"));
-  // Migrate the old Text/Motion section into the visual stack while keeping
-  // its lanes above existing video lanes.
-  const legacyText = tracks.filter((track) => track.type === "text").map((track) => ({ ...track, type: "media" as const }));
-  const media = tracks.filter((track) => track.type === "media").sort((a, b) => ordinal(b) - ordinal(a));
-  const audio = tracks.filter((track) => track.type === "audio").sort((a, b) => ordinal(a) - ordinal(b));
-  return [...legacyText, ...media, ...audio];
+  // Replacement payload order is the visual compositing contract: first
+  // visual lane is topmost. Preserve it exactly; only normalize legacy text
+  // lanes into the unified media stack and keep audio beneath visuals.
+  const visual = tracks.filter((track) => track.type !== "audio").map((track) => ({ ...track, type: "media" as const }));
+  const audio = tracks.filter((track) => track.type === "audio");
+  return [...visual, ...audio];
 }
 
 interface TimelineStore {

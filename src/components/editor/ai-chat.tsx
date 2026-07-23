@@ -10,6 +10,7 @@ import { storageService } from "@/lib/storage/storage-service";
 import type { ChatMemoryData } from "@/lib/storage/types";
 import { uid } from "@/lib/utils";
 import { elementEnd, type ElementParams, type TimelineElement, type TimelineTrack, type TrackType } from "@/types/timeline";
+import { validateGeneratedComponentSource } from "@/lib/generated-component-contract";
 
 type ChatMessage = {
   id: string;
@@ -31,12 +32,17 @@ type ChatResponse = {
 };
 
 type ChatStreamStatus = { phase?: unknown; retry?: unknown };
+type ChatStreamEvent = { event: string; payload: ChatResponse & ChatStreamStatus; receivedAt: number };
 
 const RECENT_RAW_MESSAGES = 8;
 const COMPACT_AFTER_MESSAGES = 12;
 const COMPACT_AFTER_CHARS = 16_000;
 
-async function readChatStream(response: Response, onStatus: (status: ChatStreamStatus) => void): Promise<ChatResponse> {
+function currentTimestamp() {
+  return Date.now();
+}
+
+async function readChatStream(response: Response, onStatus: (status: ChatStreamStatus) => void, onEvent: (event: ChatStreamEvent) => void): Promise<ChatResponse> {
   if (!response.body) throw new Error("The AI response stream was unavailable.");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -54,6 +60,7 @@ async function readChatStream(response: Response, onStatus: (status: ChatStreamS
         const rawData = event.match(/^data:\s*(.+)$/m)?.[1];
         if (!eventName || !rawData) continue;
         const payload = JSON.parse(rawData) as ChatResponse & ChatStreamStatus;
+        onEvent({ event: eventName, payload, receivedAt: Date.now() });
         if (eventName === "status") onStatus(payload);
         else if (eventName === "error") throw new Error(payload.error ?? "AI response failed.");
         else if (eventName === "result") result = payload;
@@ -77,20 +84,30 @@ async function compactContext(projectId: string, messages: ChatMessage[], memory
   const unsummarized = messages.slice(Math.max(0, start));
   const chars = unsummarized.reduce((total, message) => total + message.body.length, 0);
   const needsCompaction = unsummarized.length > COMPACT_AFTER_MESSAGES || chars > COMPACT_AFTER_CHARS;
-  if (!needsCompaction || unsummarized.length <= RECENT_RAW_MESSAGES) return { memory, messages: modelMessages(unsummarized) };
+  if (!needsCompaction || unsummarized.length <= RECENT_RAW_MESSAGES) return { memory, messages: modelMessages(unsummarized), compactionTransport: null };
 
   const toCompact = unsummarized.slice(0, -RECENT_RAW_MESSAGES);
+  const compactionRequestBody = { previousSummary: memory?.summary ?? "", messages: modelMessages(toCompact) };
+  const compactionStartedAt = Date.now();
   const compacted = await fetch("/api/chat/compact", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ previousSummary: memory?.summary ?? "", messages: modelMessages(toCompact) }),
+    body: JSON.stringify(compactionRequestBody),
   });
   const result = await compacted.json().catch(() => null) as { summary?: unknown } | null;
-  if (!compacted.ok || typeof result?.summary !== "string") return { memory, messages: modelMessages(unsummarized.slice(-RECENT_RAW_MESSAGES)) };
+  const compactionTransport = {
+    endpoint: "/api/chat/compact",
+    method: "POST",
+    requestHeaders: { "Content-Type": "application/json" },
+    requestBody: compactionRequestBody,
+    startedAt: compactionStartedAt,
+    response: { status: compacted.status, statusText: compacted.statusText, headers: Object.fromEntries(compacted.headers.entries()), body: result, completedAt: Date.now() },
+  };
+  if (!compacted.ok || typeof result?.summary !== "string") return { memory, messages: modelMessages(unsummarized.slice(-RECENT_RAW_MESSAGES)), compactionTransport };
   const cursor = toCompact[toCompact.length - 1];
   const nextMemory: ChatMemoryData = { projectId, summary: result.summary, summarizedThroughMessageId: cursor.id, updatedAt: Date.now() };
   await storageService.saveChatMemory(projectId, nextMemory.summary, nextMemory.summarizedThroughMessageId);
-  return { memory: nextMemory, messages: modelMessages(unsummarized.slice(-RECENT_RAW_MESSAGES)) };
+  return { memory: nextMemory, messages: modelMessages(unsummarized.slice(-RECENT_RAW_MESSAGES)), compactionTransport };
 }
 
 export function AiChat() {
@@ -157,11 +174,19 @@ export function AiChat() {
     const restructureRequested = /\b(?:restructure|resturcture|reorganize|reorganise|clean up|cleanup|compact)\b.*\b(?:timeline|tracks?)\b|\b(?:timeline|tracks?)\b.*\b(?:restructure|resturcture|reorganize|reorganise|clean up|cleanup|compact)\b/i.test(value);
     const requestSnapshot = project ? projectSnapshot(project, tracks, pool, components, selectedElementId) : undefined;
     const messageId = requestId ?? uid("msg");
-    const pendingMessage: ChatMessage = { id: messageId, role: "user", body: value, status: "pending" };
+    let transportArtifact: Record<string, unknown> = {
+      endpoint: "/api/chat",
+      method: "POST",
+      requestHeaders: { "Content-Type": "application/json" },
+      startedAt: currentTimestamp(),
+      requestBody: null,
+      response: null,
+    };
+    const pendingMessage: ChatMessage = { id: messageId, role: "user", body: value, status: "pending", artifact: { transport: transportArtifact } };
     const requestMessages = requestId
       ? messages.map((message) => message.id === messageId ? { ...message, status: "pending" as const, error: undefined } : message)
       : [...messages, pendingMessage];
-    if (requestId) updateMessage(requestId, { status: "pending", error: undefined });
+    if (requestId) updateMessage(requestId, { status: "pending", error: undefined, artifact: { transport: transportArtifact } });
     else {
       appendMessage(pendingMessage);
     }
@@ -171,27 +196,45 @@ export function AiChat() {
     setIsSending(true);
     try {
       setRequestPhase("compacting");
-      const context = project ? await compactContext(project.id, requestMessages, memory) : { memory, messages: modelMessages(requestMessages) };
+      const context = project ? await compactContext(project.id, requestMessages, memory) : { memory, messages: modelMessages(requestMessages), compactionTransport: null };
       if (context.memory !== memory) setMemory(context.memory);
       setRequestPhase("thinking");
+      const requestBody = {
+        messages: context.messages,
+        project: requestSnapshot,
+        memory: context.memory?.summary ?? "",
+        stream: true,
+      };
+      transportArtifact = { ...transportArtifact, auxiliaryRequests: context.compactionTransport ? [context.compactionTransport] : [], requestBody };
+      updateMessage(messageId, { artifact: { transport: transportArtifact } });
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: context.messages,
-          project: requestSnapshot,
-          memory: context.memory?.summary ?? "",
-          stream: true,
-        }),
+        body: JSON.stringify(requestBody),
       });
+      const streamEvents: ChatStreamEvent[] = [];
+      const responseMetadata = {
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries(response.headers.entries()),
+      };
+      transportArtifact = { ...transportArtifact, response: { ...responseMetadata, events: streamEvents } };
+      updateMessage(messageId, { artifact: { transport: transportArtifact } });
       if (!response.ok) {
         const failed = await response.json().catch(() => null) as ChatResponse | null;
+        transportArtifact = { ...transportArtifact, response: { ...responseMetadata, body: failed, events: streamEvents, completedAt: currentTimestamp() } };
+        updateMessage(messageId, { artifact: { transport: transportArtifact } });
         throw new Error(failed?.error ?? "AI response failed.");
       }
       const result = await readChatStream(response, (status) => {
         if (status.phase === "retry" && typeof status.retry === "number") { setRetryAttempt(status.retry); setRequestPhase("retrying"); }
         if (status.phase === "thinking") setRequestPhase("thinking");
+      }, (event) => {
+        streamEvents.push(event);
+        transportArtifact = { ...transportArtifact, response: { ...responseMetadata, events: [...streamEvents] } };
+        updateMessage(messageId, { artifact: { transport: transportArtifact } });
       });
+      transportArtifact = { ...transportArtifact, response: { ...responseMetadata, events: [...streamEvents], finalResult: result, completedAt: currentTimestamp() } };
       const reply = result.reply ?? result.content;
       if (!response.ok || !reply) throw new Error(result.error ?? "AI response failed.");
       const currentRevision = useProjectStore.getState().activeProject?.revision;
@@ -205,14 +248,18 @@ export function AiChat() {
           ? "The AI edit payload could not be applied. Nothing was changed; retry the request."
           : "The project changed while AI was responding. Nothing was changed; retry with the current revision.");
       }
-      updateMessage(messageId, { status: "complete", error: undefined });
+      const resultingTimeline = timelineContext(useTimelineStore.getState().tracks, useComponentStore.getState().components, true);
+      updateMessage(messageId, { status: "complete", error: undefined, artifact: { transport: transportArtifact, editorResult: { receivedAtRevision: currentRevision ?? null, revisionMatches, applied, timelineAfter: resultingTimeline } } });
       appendMessage({ id: uid("msg"), role: "assistant", body: reply, tools: applied.length ? `Applied: ${applied.join(", ")}` : undefined, artifact: {
+        transport: transportArtifact,
         request: requestSnapshot,
-        response: { expectedRevision: result.expectedRevision ?? null, receivedAtRevision: currentRevision ?? null, revisionMatches, operations: result.operations ?? [], applied, timelineAfter: timelineContext(useTimelineStore.getState().tracks, useComponentStore.getState().components, true) },
+        response: { expectedRevision: result.expectedRevision ?? null, receivedAtRevision: currentRevision ?? null, revisionMatches, operations: result.operations ?? [], applied, timelineAfter: resultingTimeline },
       } });
     } catch (error) {
       const message = error instanceof Error ? error.message : "AI response failed.";
-      updateMessage(messageId, { status: "failed", error: message });
+      const priorResponse = asRecord(transportArtifact.response);
+      transportArtifact = { ...transportArtifact, response: { ...priorResponse, error: message, completedAt: currentTimestamp() } };
+      updateMessage(messageId, { status: "failed", error: message, artifact: { transport: transportArtifact } });
     } finally {
       setIsSending(false);
       setRetryAttempt(null);
@@ -302,10 +349,18 @@ function HistoryDrawer({ messages, onClose }: { messages: ChatMessage[]; onClose
   const copyExchange = async (requestIndex: number, responseIndex?: number) => {
     const request = messages[requestIndex];
     const response = responseIndex === undefined ? undefined : messages[responseIndex];
-    const artifact = response?.artifact ? `\n\n# ShiftCut structured artifact\n${JSON.stringify(response.artifact, null, 2)}` : "";
     const status = request.status ?? (response ? "complete" : "unfinished");
-    const error = request.error ? `\nError: ${request.error}` : "";
-    await copy(`exchange-${requestIndex}`, `# ShiftCut AI request\n${request.body}\n\n# Request status\n${status}${error}${response ? `\n\n# ShiftCut AI response\n${response.body}${artifact}` : "\n\n# ShiftCut AI response\n(no response saved)"}`);
+    const fullPayload = {
+      exportedAt: new Date().toISOString(),
+      requestMessage: request.body,
+      requestStatus: status,
+      requestError: request.error ?? null,
+      sentAndReceivedTransport: request.artifact?.transport ?? response?.artifact?.transport ?? null,
+      editorResult: request.artifact?.editorResult ?? response?.artifact?.response ?? null,
+      assistantMessage: response?.body ?? null,
+      completeAssistantArtifact: response?.artifact ?? null,
+    };
+    await copy(`exchange-${requestIndex}`, `# ShiftCut complete AI transport payload\n\n${JSON.stringify(fullPayload, null, 2)}`);
   };
   const requests = messages.flatMap((message, requestIndex) => {
     if (message.role !== "user") return [];
@@ -332,7 +387,7 @@ function HistoryDrawer({ messages, onClose }: { messages: ChatMessage[]; onClose
                 <div className={`mt-2 text-[10px] font-semibold ${statusColor}`}>{statusLabel}{request.error ? ` — ${request.error}` : ""}</div>
                 {response && <><div className="mb-2 mt-3 text-[10px] font-semibold uppercase tracking-[.08em] text-[#89857e]">Response</div>
                   <p className="line-clamp-5 whitespace-pre-wrap text-[11px] leading-4 text-[#49453f]">{response.body}</p></>}
-                <button type="button" title="Copies request status, response when available, protocol operations, revision check, and resulting timeline snapshot." onClick={() => void copyExchange(requestIndex, responseIndex)} className="mt-3 border border-[#c9c7c2] bg-[#efeeeb] px-2 py-1 text-[10px] font-medium text-[#56514c] hover:border-[#77736d]">{copiedKey === `exchange-${requestIndex}` ? "Debug payload copied" : "Copy debug payload"}</button>
+                <button type="button" title="Copies the exact request body, project snapshot, messages, memory, HTTP metadata, streamed retry/status events, final response or error, applied operations, and resulting timeline." onClick={() => void copyExchange(requestIndex, responseIndex)} className="mt-3 border border-[#c9c7c2] bg-[#efeeeb] px-2 py-1 text-[10px] font-medium text-[#56514c] hover:border-[#77736d]">{copiedKey === `exchange-${requestIndex}` ? "Full payload copied" : "Copy full request/response"}</button>
                 {response && <HistoryArtifact artifact={response.artifact} index={responseIndex!} copiedKey={copiedKey} onCopy={copy} />}
               </article>;
             })}
@@ -429,7 +484,8 @@ function applyOperations(operations: TimelineOperation[], requireTimelineTime = 
   for (const operation of operations.slice(0, 12)) {
     if (!operation || typeof operation.action !== "string") continue;
     if (operation.action === "replace_timeline") {
-      const replacement = replacementTimeline(operation.tracks, pool, requireTimelineTime);
+      const fps = useProjectStore.getState().activeProject?.settings.fps ?? 30;
+      const replacement = replacementTimeline(operation.tracks, pool, requireTimelineTime, fps);
       if (!replacement) continue;
       store.replaceTimeline(replacement);
       applied.push("entire timeline");
@@ -523,9 +579,11 @@ function applyOperations(operations: TimelineOperation[], requireTimelineTime = 
   return [...new Set(applied)];
 }
 
-function replacementTimeline(value: unknown, pool: ReturnType<typeof useMediaStore.getState>["pool"], requireTimelineTime: boolean): TimelineTrack[] | null {
+function replacementTimeline(value: unknown, pool: ReturnType<typeof useMediaStore.getState>["pool"], requireTimelineTime: boolean, fps: number): TimelineTrack[] | null {
   if (!Array.isArray(value) || value.length === 0 || value.length > 32) return null;
   const tracks: TimelineTrack[] = [];
+  const usedTrackIds = new Set<string>();
+  const usedElementIds = new Set<string>();
   for (const rawTrack of value) {
     const track = asRecord(rawTrack);
     const type: TrackType = track?.type === "audio" ? "audio" : "media";
@@ -534,25 +592,65 @@ function replacementTimeline(value: unknown, pool: ReturnType<typeof useMediaSto
     for (const rawElement of rawElements) {
       const item = asRecord(rawElement);
       if (!item) continue;
-      const startTime = nonNegative(item.startTime);
-      const duration = Math.max(0.1, finite(item.duration, 3));
+      const startTime = frameSeconds(nonNegative(item.startTime), fps);
+      const duration = Math.max(1 / fps, frameSeconds(Math.max(0.1, finite(item.duration, 3)), fps));
       const generated = asRecord(item.generatedComponent);
+      const requestedId = typeof item.id === "string" && item.id.trim() && !usedElementIds.has(item.id) ? item.id : uid("el");
+      usedElementIds.add(requestedId);
+      const trimStart = Math.min(Math.max(0, duration - 0.1), nonNegative(item.trimStart));
+      const trimEnd = Math.min(Math.max(0, duration - trimStart - 0.1), nonNegative(item.trimEnd));
+      const componentId = typeof item.componentId === "string" ? item.componentId : "";
+      const existingArtifact = componentId ? useComponentStore.getState().get(componentId) : undefined;
+      if (componentId && !existingArtifact) return null;
+      if (existingArtifact) {
+        if (type !== "media") return null;
+        elements.push({
+          id: requestedId,
+          type: "text",
+          name: stringValue(item.name, existingArtifact.name),
+          component: "GeneratedReactComponent",
+          componentId: existingArtifact.id,
+          componentVersion: typeof item.componentVersion === "number" ? item.componentVersion : existingArtifact.version,
+          startTime,
+          duration,
+          trimStart,
+          trimEnd,
+          params: { ...defaultParams(), ...componentParams(item.params) },
+        });
+        continue;
+      }
       if (generated) {
         const code = typeof generated.code === "string" ? generated.code : "";
-        if (!isSafeComponentCode(code, requireTimelineTime) || type !== "media") continue;
+        if (!isSafeComponentCode(code, requireTimelineTime) || type !== "media") return null;
         const artifact = useComponentStore.getState().upsert({ name: stringValue(generated.name, "GeneratedComponent"), description: stringValue(generated.description, "AI-generated overlay"), code, propsSchema: componentSchema(generated.propsSchema) });
-        elements.push({ id: uid("el"), type: "text", name: stringValue(item.name, artifact.name), component: "GeneratedReactComponent", componentId: artifact.id, componentVersion: artifact.version, startTime, duration, trimStart: 0, trimEnd: 0, params: { ...defaultParams(), ...componentParams(item.params) } });
+        elements.push({ id: requestedId, type: "text", name: stringValue(item.name, artifact.name), component: "GeneratedReactComponent", componentId: artifact.id, componentVersion: artifact.version, startTime, duration, trimStart, trimEnd, params: { ...defaultParams(), ...componentParams(item.params) } });
         continue;
       }
       const mediaId = typeof item.mediaId === "string" ? item.mediaId : "";
       const media = pool.find((asset) => asset.id === mediaId);
-      if (!media || (type === "audio") !== (media.kind === "audio")) continue;
+      if (!media || (type === "audio") !== (media.kind === "audio")) return null;
       const component = media.kind === "audio" ? "AudioPlayer" : media.kind === "video" ? "VideoPlayer" : "ImagePlayer";
-      elements.push({ id: uid("el"), type: "media", mediaId, name: stringValue(item.name, media.name), component, startTime, duration: Math.min(duration, media.duration ?? duration), trimStart: 0, trimEnd: 0, params: { ...defaultParams(), ...componentParams(item.params) } });
+      const sourceDuration = Math.max(0.1, Math.min(duration, media.duration ?? duration));
+      const mediaTrimStart = Math.min(Math.max(0, sourceDuration - 0.1), trimStart);
+      const mediaTrimEnd = Math.min(Math.max(0, sourceDuration - mediaTrimStart - 0.1), trimEnd);
+      elements.push({ id: requestedId, type: "media", mediaId, name: stringValue(item.name, media.name), component, startTime, duration: sourceDuration, trimStart: mediaTrimStart, trimEnd: mediaTrimEnd, params: { ...defaultParams(), ...componentParams(item.params) } });
     }
     const ordered = [...elements].sort((a, b) => a.startTime - b.startTime);
-    if (ordered.some((element, index) => index > 0 && element.startTime < elementEnd(ordered[index - 1]))) return null;
-    tracks.push({ id: uid("track"), name: stringValue(track?.name, type === "audio" ? "Audio" : "Video"), type, elements: ordered, muted: false, hidden: false, locked: false });
+    const frameTolerance = 1 / fps + Number.EPSILON;
+    const normalized: TimelineElement[] = [];
+    for (const element of ordered) {
+      const previous = normalized[normalized.length - 1];
+      if (!previous || element.startTime >= elementEnd(previous)) {
+        normalized.push(element);
+        continue;
+      }
+      const overlap = elementEnd(previous) - element.startTime;
+      if (overlap > frameTolerance) return null;
+      normalized.push({ ...element, startTime: elementEnd(previous) });
+    }
+    const requestedTrackId = typeof track?.id === "string" && track.id.trim() && !usedTrackIds.has(track.id) ? track.id : uid("track");
+    usedTrackIds.add(requestedTrackId);
+    tracks.push({ id: requestedTrackId, name: stringValue(track?.name, type === "audio" ? "Audio" : "Video"), type, elements: normalized, muted: track?.muted === true, hidden: track?.hidden === true, locked: track?.locked === true });
   }
   return tracks;
 }
@@ -586,6 +684,7 @@ function repairTimelineOverlaps() {
 function asRecord(value: unknown) { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null; }
 function finite(value: unknown, fallback: number) { return typeof value === "number" && Number.isFinite(value) ? value : fallback; }
 function nonNegative(value: unknown) { return Math.max(0, finite(value, 0)); }
+function frameSeconds(value: number, fps: number) { return Math.round(value * Math.max(1, fps)) / Math.max(1, fps); }
 function stringValue(value: unknown, fallback: string) { return typeof value === "string" && value.trim() ? value.slice(0, 120) : fallback; }
 function defaultParams(): ElementParams { return { x: 0, y: 0, scale: 1, rotation: 0, opacity: 1, zIndex: 1, volume: 1 }; }
 
@@ -608,5 +707,5 @@ function componentSchema(value: unknown): Array<{ name: string; type: "string" |
 
 function isSafeComponentCode(code: string, requireTimelineTime = false) {
   const timeDriven = !requireTimelineTime || /props\.localTime\b/.test(code);
-  return timeDriven && code.length > 0 && code.length <= 16_000 && /function\s+GeneratedComponent\s*\(/.test(code) && !/\b(fetch|XMLHttpRequest|WebSocket|localStorage|sessionStorage|document|window|setTimeout|setInterval|requestAnimationFrame|import|eval|Function|Date|performance|transition|animation)\b|Math\.random/.test(code);
+  return timeDriven && code.length <= 16_000 && validateGeneratedComponentSource(code).compatible;
 }
