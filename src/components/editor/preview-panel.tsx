@@ -12,6 +12,7 @@ import { useComponentStore } from "@/stores/component-store";
 import { storageService } from "@/lib/storage/storage-service";
 import { elementEnd, type TimelineElement } from "@/types/timeline";
 import { GeneratedComponentRuntime, validateGeneratedComponent } from "@/components/generated-component-runtime";
+import { getMediaLayout } from "@/render/media-layout";
 
 export function PreviewPanel() {
   const project = useProjectStore((s) => s.activeProject);
@@ -69,9 +70,11 @@ export function PreviewPanel() {
         <div ref={stageRef} className="relative overflow-hidden bg-black shadow-[0_1px_3px_rgba(0,0,0,.25)]" style={{ ...stageStyle, background: project.settings.background ?? "#000" }}>
           {active.length === 0 && <div className="flex h-full items-center justify-center text-sm text-slate-400">Drag an asset onto the timeline</div>}
           <div className="absolute left-1/2 top-1/2" style={{ width: project.settings.width, height: project.settings.height, transform: `translate(-50%, -50%) scale(${compositionScale})`, transformOrigin: "center" }}>
-            {active.map(({ el, hidden }) => hidden ? null : (
-              <Layer key={el.id} el={el} time={currentTime} playing={isPlaying} selected={selectedId === el.id} onSelect={() => selectElement(el.id)} canvas={project.settings} />
-            ))}
+            <div data-shiftcut-html-player className="relative overflow-hidden" style={{ width: project.settings.width, height: project.settings.height, background: project.settings.background ?? "#000" }}>
+              {active.map(({ el, hidden }) => hidden ? null : (
+                <Layer key={el.id} el={el} time={currentTime} playing={isPlaying} selected={selectedId === el.id} onSelect={() => selectElement(el.id)} canvas={project.settings} />
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -94,13 +97,9 @@ function useMediaUrl(mediaId?: string) {
 function Layer({ el, time, playing, selected, onSelect, canvas }: { el: TimelineElement; time: number; playing: boolean; selected: boolean; onSelect: () => void; canvas: { width: number; height: number } }) {
   const artifact = useComponentStore((state) => el.componentId ? state.components[el.componentId] : undefined);
   const p = el.params;
-  const sx = (p.scaleX as number) ?? p.scale;
-  const sy = (p.scaleY as number) ?? p.scale;
+  const layout = getMediaLayout(p);
   const style: React.CSSProperties = {
-    position: "absolute", inset: 0,
-    transform: `translate(${p.x}px, ${p.y}px) scale(${sx}, ${sy}) rotate(${p.rotation}deg)`,
-    opacity: p.opacity,
-    filter: p.filter === "grayscale" ? "grayscale(1)" : undefined,
+    ...layout.containerStyle,
     outline: selected ? "2px solid #2563eb" : "none",
     outlineOffset: -2,
   };
@@ -108,22 +107,23 @@ function Layer({ el, time, playing, selected, onSelect, canvas }: { el: Timeline
     if (el.component === "GeneratedReactComponent" && artifact) {
       const generatedStyle: React.CSSProperties = {
         position: "absolute", inset: 0,
+        zIndex: typeof p.zIndex === "number" ? p.zIndex : 0,
         outline: selected ? "2px solid #2563eb" : "none",
         outlineOffset: -2,
       };
       const compatibility = validateGeneratedComponent(artifact.code);
       return <div style={generatedStyle} onMouseDown={onSelect}>
-        {compatibility.compatible ? <GeneratedComponentRuntime code={artifact.code} props={{ ...el.params, params: el.params, localTime: Math.max(0, time - el.startTime), duration: elementEnd(el) - el.startTime, canvasWidth: canvas.width, canvasHeight: canvas.height }} /> : <div className="flex h-full items-center justify-center text-sm text-red-400">Component needs regeneration</div>}
+        {compatibility.compatible ? <GeneratedComponentRuntime code={artifact.code} props={{ ...el.params, params: el.params, localTime: Math.max(0, time - el.startTime), timelineTime: time, elementStartTime: el.startTime, duration: elementEnd(el) - el.startTime, canvasWidth: canvas.width, canvasHeight: canvas.height }} /> : <div className="flex h-full items-center justify-center text-sm text-red-400">Component needs regeneration</div>}
       </div>;
     }
     return <div style={style} onMouseDown={onSelect} className="flex items-center justify-center"><span style={{ color: (p.color as string) ?? "#fff", fontSize: (p.fontSize as number) ?? 48 }}>{(p.text as string) ?? "Text"}</span></div>;
   }
-  if (el.component === "ImagePlayer") return <ImageLayer el={el} style={style} onSelect={onSelect} />;
+  if (el.component === "ImagePlayer") return <ImageLayer el={el} style={style} mediaStyle={layout.mediaStyle} onSelect={onSelect} />;
   if (el.component === "AudioPlayer") return <AudioLayer el={el} time={time} playing={playing} />;
-  return <VideoLayer el={el} time={time} playing={playing} style={style} onSelect={onSelect} />;
+  return <VideoLayer el={el} time={time} playing={playing} style={style} mediaStyle={layout.mediaStyle} onSelect={onSelect} />;
 }
 
-function VideoLayer({ el, time, playing, style, onSelect }: { el: TimelineElement; time: number; playing: boolean; style: React.CSSProperties; onSelect: () => void }) {
+function VideoLayer({ el, time, playing, style, mediaStyle, onSelect }: { el: TimelineElement; time: number; playing: boolean; style: React.CSSProperties; mediaStyle: React.CSSProperties; onSelect: () => void }) {
   const url = useMediaUrl(el.mediaId);
   const ref = useRef<HTMLVideoElement>(null);
   const local = time - el.startTime + el.trimStart;
@@ -135,13 +135,18 @@ function VideoLayer({ el, time, playing, style, onSelect }: { el: TimelineElemen
   }, [playing, local]);
   const volume = typeof el.params.volume === "number" ? Math.max(0, Math.min(1, el.params.volume)) : 1;
   useEffect(() => { if (ref.current) ref.current.volume = volume; }, [volume]);
-  return <video ref={ref} src={url ?? undefined} muted={volume === 0} onMouseDown={onSelect} style={style} className="h-full w-full object-contain" />;
+  return <div style={style} onMouseDown={onSelect}>
+    <video ref={ref} src={url ?? undefined} muted={volume === 0} style={mediaStyle} />
+  </div>;
 }
 
-function ImageLayer({ el, style, onSelect }: { el: TimelineElement; style: React.CSSProperties; onSelect: () => void }) {
+function ImageLayer({ el, style, mediaStyle, onSelect }: { el: TimelineElement; style: React.CSSProperties; mediaStyle: React.CSSProperties; onSelect: () => void }) {
   const url = useMediaUrl(el.mediaId);
   // eslint-disable-next-line @next/next/no-img-element
-  return <img src={url ?? undefined} alt="" style={style} onMouseDown={onSelect} className="h-full w-full object-contain" />;
+  return <div style={style} onMouseDown={onSelect}>
+    {/* eslint-disable-next-line @next/next/no-img-element */}
+    <img src={url ?? undefined} alt="" style={mediaStyle} />
+  </div>;
 }
 
 function AudioLayer({ el, time, playing }: { el: TimelineElement; time: number; playing: boolean }) {

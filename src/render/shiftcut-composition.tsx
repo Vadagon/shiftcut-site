@@ -3,6 +3,7 @@ import { AbsoluteFill, Img, Sequence, useCurrentFrame } from "remotion";
 import { GeneratedComponentRuntime } from "@/components/generated-component-runtime";
 import { effectiveDuration, type TimelineElement, type TimelineTrack } from "@/types/timeline";
 import type { RenderManifest } from "./types";
+import { getMediaLayout } from "./media-layout";
 
 export interface ShiftCutCompositionProps extends Record<string, unknown> {
   manifest: RenderManifest;
@@ -14,6 +15,8 @@ export function ShiftCutComposition({ manifest }: ShiftCutCompositionProps) {
   const audioTracks = manifest.tracks.filter((track) => track.type === "audio");
 
   return <AbsoluteFill style={{ backgroundColor: background, overflow: "hidden" }}>
+    {/* Timeline lanes are stored from top to bottom. Later DOM siblings paint
+        above earlier ones, so render bottom lanes first and top lanes last. */}
     {[...visualTracks].reverse().map((track) => <Track key={track.id} track={track} manifest={manifest} fps={fps} />)}
     {audioTracks.map((track) => <Track key={track.id} track={track} manifest={manifest} fps={fps} />)}
   </AbsoluteFill>;
@@ -61,6 +64,8 @@ function Element({ element, track, manifest, fps, clippedHeadFrames }: { element
         ...element.params,
         params: element.params,
         localTime: (frame + clippedHeadFrames) / fps,
+        timelineTime: element.startTime + (frame + clippedHeadFrames) / fps,
+        elementStartTime: element.startTime,
         duration: effectiveDuration(element),
         canvasWidth: manifest.project.settings.width,
         canvasHeight: manifest.project.settings.height,
@@ -69,26 +74,20 @@ function Element({ element, track, manifest, fps, clippedHeadFrames }: { element
   }
 
   const params = element.params;
-  const scaleX = numberParam(params.scaleX, params.scale);
-  const scaleY = numberParam(params.scaleY, params.scale);
-  const layerStyle: React.CSSProperties = {
-    position: "absolute",
-    inset: 0,
-    transform: `translate(${params.x}px, ${params.y}px) scale(${scaleX}, ${scaleY}) rotate(${params.rotation}deg)`,
-    transformOrigin: "center",
-    opacity: clamp(params.opacity, 0, 1),
-    filter: params.filter === "grayscale" ? "grayscale(1)" : undefined,
-    zIndex: numberParam(params.zIndex, 0),
-  };
+  const layout = getMediaLayout(params);
 
   if (asset?.kind === "video") {
-    return <Video src={asset.url} trimBefore={trimBefore} trimAfter={trimAfter} volume={volume} muted={volume === 0} style={{ ...layerStyle, width: "100%", height: "100%", objectFit: "contain" }} />;
+    return <div style={layout.containerStyle}>
+      <Video src={asset.url} trimBefore={trimBefore} trimAfter={trimAfter} volume={volume} muted={volume === 0} style={layout.mediaStyle} />
+    </div>;
   }
   if (asset?.kind === "image") {
-    return <Img src={asset.url} style={{ ...layerStyle, width: "100%", height: "100%", objectFit: "contain" }} />;
+    return <div style={layout.containerStyle}>
+      <Img src={asset.url} style={layout.mediaStyle} />
+    </div>;
   }
 
-  return <div style={{ ...layerStyle, display: "flex", alignItems: "center", justifyContent: "center" }}>
+  return <div style={{ ...layout.containerStyle, display: "flex", alignItems: "center", justifyContent: "center" }}>
     <span style={{
       color: stringParam(params.color, "#ffffff"),
       fontSize: numberParam(params.fontSize, 48),

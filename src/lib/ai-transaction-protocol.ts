@@ -11,6 +11,7 @@ type JsonRecord = Record<string, unknown>;
 export type EditorOperation =
   | { type: "update_project_settings"; patch: { width?: number; height?: number; fps?: number; background?: string } }
   | { type: "create_track"; temporaryId: string; trackType: "visual" | "audio"; name?: string; position?: number }
+  | { type: "reorder_track"; trackId: string; position: number }
   | { type: "delete_track"; trackId: string }
   | { type: "delete_element"; elementId: string }
   | { type: "move_element"; elementId: string; trackId: string; startTime: number }
@@ -73,6 +74,7 @@ Response:
 Allowed operations:
 - {"type":"update_project_settings","patch":{"width":1080,"height":1920,"fps":30,"background":"#000000"}}
 - {"type":"create_track","temporaryId":"new:overlay","trackType":"visual|audio","name":"Overlay","position":0}
+- {"type":"reorder_track","trackId":"existing-track-id","position":0}
 - {"type":"delete_track","trackId":"existing-track-id"}
 - {"type":"delete_element","elementId":"existing-element-id"}
 - {"type":"move_element","elementId":"existing-element-id","trackId":"existing-or-temporary-track-id","startTime":2}
@@ -181,6 +183,15 @@ export function simulateTransaction(input: {
       const type: TrackType = operation.trackType === "audio" ? "audio" : "media";
       const track: TimelineTrack = { id, name: operation.name?.trim() || (type === "audio" ? "Audio" : "Video"), type, elements: [], muted: false, hidden: false, locked: false };
       const position = Math.max(0, Math.min(tracks.length, Math.round(operation.position ?? (type === "audio" ? tracks.length : 0))));
+      tracks.splice(position, 0, track);
+      continue;
+    }
+    if (operation.type === "reorder_track") {
+      const id = resolveTrack(operation.trackId);
+      const currentIndex = tracks.findIndex((track) => track.id === id);
+      if (currentIndex < 0) throw new Error(`Unknown track ${operation.trackId}.`);
+      const [track] = tracks.splice(currentIndex, 1);
+      const position = Math.max(0, Math.min(tracks.length, Math.round(operation.position)));
       tracks.splice(position, 0, track);
       continue;
     }
@@ -304,13 +315,17 @@ export function buildFocusedComponentPrompt(input: {
 
 Instruction: ${input.job.instruction}
 Canvas: ${input.projectWidth}x${input.projectHeight} at ${input.fps}fps.
+Element timeline start: ${input.element?.startTime ?? input.job.startTime ?? 0}s; element duration: ${input.element ? elementEnd(input.element) - input.element.startTime : input.job.duration ?? 0}s.
 Element params: ${JSON.stringify(input.element?.params ?? input.job.params ?? {})}
 Current component: ${input.artifact ? JSON.stringify({ name: input.artifact.name, description: input.artifact.description, propsSchema: input.artifact.propsSchema, code: input.artifact.code }) : "(new component)"}
 
 Rules:
 - Define function GeneratedComponent(props).
 - Use React.createElement only; no JSX or imports.
-- Motion must derive from props.localTime and be deterministic.
+- props.localTime starts at 0 when this element starts. Use it for all animation timing and compare it only to offsets inside this element.
+- props.timelineTime is the absolute project clock. Use it only when this component intentionally synchronizes with elements outside its own timeline span.
+- props.elementStartTime is the element's absolute timeline start; props.duration is its effective duration.
+- Motion must derive from props.localTime (or intentionally props.timelineTime) and be deterministic.
 - No timers, Date, performance, Math.random, fetch, storage, browser/process globals, CSS animations, or transitions.
 - Return complete replacement source, not a patch.`;
 }
@@ -353,6 +368,7 @@ function parseOperation(value: unknown, index: number): EditorOperation {
       return { type: item.type, patch: { ...(width !== undefined ? { width } : {}), ...(height !== undefined ? { height } : {}), ...(fps !== undefined ? { fps } : {}), ...(background ? { background } : {}) } };
     }
     case "create_track": return { type: item.type, temporaryId: newId(item.temporaryId, "temporaryId"), trackType: item.trackType === "audio" ? "audio" : "visual", ...(optionalString(item.name) ? { name: optionalString(item.name) } : {}), ...(finite(item.position) ? { position: Number(item.position) } : {}) };
+    case "reorder_track": return { type: item.type, trackId: requiredString(item.trackId, "trackId"), position: requiredNumber(item.position, "position") };
     case "delete_track": return { type: item.type, trackId: requiredString(item.trackId, "trackId") };
     case "delete_element": return { type: item.type, elementId: requiredString(item.elementId, "elementId") };
     case "move_element": return { type: item.type, elementId: requiredString(item.elementId, "elementId"), trackId: requiredString(item.trackId, "trackId"), startTime: requiredNumber(item.startTime, "startTime") };

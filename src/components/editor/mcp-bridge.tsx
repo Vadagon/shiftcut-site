@@ -11,8 +11,11 @@ import { useComponentStore } from "@/stores/component-store";
 import { createRenderManifest } from "@/render/create-render-manifest";
 import { renderLocally } from "@/render/local-render";
 import { renderStillLocally } from "@/render/render-still";
+import { validateGeneratedComponent } from "@/components/generated-component-runtime";
+import { captureHtmlPlayer } from "@/render/capture-html-player";
+import { usePlaybackStore } from "@/stores/playback-store";
 
-const BRIDGE_URL = "ws://127.0.0.1:43891";
+const BRIDGE_URL = process.env.NEXT_PUBLIC_SHIFTCUT_MCP_BRIDGE_URL ?? "ws://127.0.0.1:43891";
 
 type BridgeRequest = { id: string; method: string; params?: Record<string, unknown> };
 
@@ -21,9 +24,10 @@ export function McpBridge() {
     let socket: WebSocket | null = null;
     let retry: ReturnType<typeof setTimeout> | null = null;
     let stopped = false;
+    let manuallyDisconnected = false;
 
     const connect = () => {
-      if (stopped) return;
+      if (stopped || manuallyDisconnected || socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) return;
       socket = new WebSocket(BRIDGE_URL);
       socket.addEventListener("open", () => {
         window.dispatchEvent(new CustomEvent("shiftcut:mcp-status", { detail: { connected: true } }));
@@ -36,14 +40,33 @@ export function McpBridge() {
       });
       socket.addEventListener("close", () => {
         window.dispatchEvent(new CustomEvent("shiftcut:mcp-status", { detail: { connected: false } }));
-        if (!stopped) retry = setTimeout(connect, 1500);
+        socket = null;
+        if (!stopped && !manuallyDisconnected) retry = setTimeout(connect, 1500);
       });
     };
+    const disconnect = () => {
+      manuallyDisconnected = true;
+      if (retry) {
+        clearTimeout(retry);
+        retry = null;
+      }
+      socket?.close(1000, "Disconnected by editor user");
+      socket = null;
+      window.dispatchEvent(new CustomEvent("shiftcut:mcp-status", { detail: { connected: false } }));
+    };
+    const reconnect = () => {
+      manuallyDisconnected = false;
+      connect();
+    };
+    window.addEventListener("shiftcut:mcp-disconnect", disconnect);
+    window.addEventListener("shiftcut:mcp-reconnect", reconnect);
     connect();
     return () => {
       stopped = true;
       if (retry) clearTimeout(retry);
       socket?.close();
+      window.removeEventListener("shiftcut:mcp-disconnect", disconnect);
+      window.removeEventListener("shiftcut:mcp-reconnect", reconnect);
       window.dispatchEvent(new CustomEvent("shiftcut:mcp-status", { detail: { connected: false } }));
     };
   }, []);
@@ -83,6 +106,42 @@ async function handleBridgeRequest(request: BridgeRequest) {
       timeline.replaceTimeline(simulation.tracks, `MCP: ${transaction.summary}`);
       return { revision: useProjectStore.getState().activeProject?.revision, summary: transaction.summary };
     }
+    case "replace_component": {
+      const expectedRevision = Number(params.expectedRevision);
+      if (expectedRevision !== project.revision) throw new Error(`Revision mismatch: expected ${expectedRevision}, current ${project.revision}.`);
+      const elementId = String(params.elementId ?? "");
+      const found = timeline.findElement(elementId);
+      if (!found?.element.componentId) throw new Error(`Element ${elementId} is not a generated component.`);
+      const code = String(params.code ?? "");
+      const compatibility = validateGeneratedComponent(code);
+      if (!compatibility.compatible) throw new Error(`Component acceptance failed: ${compatibility.errors.join(" ")}`);
+      const existing = components[found.element.componentId];
+      if (!existing) throw new Error(`Component source ${found.element.componentId} is missing.`);
+      const propsSchema = Array.isArray(params.propsSchema)
+        ? params.propsSchema as typeof existing.propsSchema
+        : existing.propsSchema;
+      const artifact = useComponentStore.getState().upsert({
+        name: typeof params.name === "string" && params.name.trim() ? params.name.trim() : existing.name,
+        description: typeof params.description === "string" && params.description.trim() ? params.description.trim() : existing.description,
+        code,
+        propsSchema,
+      }, existing.id);
+      const nextTracks = timeline.tracks.map((track) => ({
+        ...track,
+        elements: track.elements.map((element) => element.id === elementId
+          ? {
+              ...element,
+              componentId: artifact.id,
+              componentVersion: artifact.version,
+              ...(typeof params.elementDescription === "string" && params.elementDescription.trim() ? { description: params.elementDescription.trim() } : {}),
+              ...(typeof params.purpose === "string" && params.purpose.trim() ? { purpose: params.purpose.trim() } : {}),
+            }
+          : element),
+      }));
+      useProjectStore.getState().setCompositionDescriptionForCommit(String(params.compositionDescription ?? project.compositionDescription ?? ""));
+      timeline.replaceTimeline(nextTracks, typeof params.summary === "string" && params.summary.trim() ? params.summary.trim() : `MCP: updated ${found.element.name}`);
+      return { revision: useProjectStore.getState().activeProject?.revision, componentId: artifact.id, componentVersion: artifact.version };
+    }
     case "upload_assets": {
       const files = Array.isArray(params.files) ? params.files : [];
       const browserFiles = files.map((item) => {
@@ -114,6 +173,14 @@ async function handleBridgeRequest(request: BridgeRequest) {
         prepared.release();
       }
     }
+    case "screenshot_player": {
+      const second = Math.max(0, Number(params.second ?? 0));
+      usePlaybackStore.getState().pause();
+      usePlaybackStore.getState().seek(second);
+      await waitForPlayerPaint();
+      const blob = await captureHtmlPlayer();
+      return { mime: "image/png", second, base64: await blobToBase64(blob) };
+    }
     case "export_video": {
       const prepared = await createRenderManifest({ project, tracks: timeline.tracks, pool: media.pool, components });
       try {
@@ -132,6 +199,21 @@ async function handleBridgeRequest(request: BridgeRequest) {
     default:
       throw new Error(`Unsupported MCP bridge method: ${request.method}`);
   }
+}
+
+async function waitForPlayerPaint() {
+  await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+  const videos = [...document.querySelectorAll<HTMLVideoElement>("[data-shiftcut-html-player] video")];
+  await Promise.all(videos.map((video) => {
+    if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && !video.seeking) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const done = () => resolve();
+      video.addEventListener("seeked", done, { once: true });
+      video.addEventListener("loadeddata", done, { once: true });
+      setTimeout(done, 750);
+    });
+  }));
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 }
 
 async function hydrateProjectContext(projectId: string, tracks: ReturnType<typeof useTimelineStore.getState>["tracks"]) {

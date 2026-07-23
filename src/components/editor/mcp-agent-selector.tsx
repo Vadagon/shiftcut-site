@@ -64,8 +64,31 @@ export function McpAgentSelector({ placement = "below", compact = false }: { pla
           className={`absolute right-0 z-50 w-[272px] border border-[#c9c7c2] bg-[#f6f5f2] p-1.5 text-left shadow-[0_8px_24px_rgba(0,0,0,.16)] ${placement === "above" ? "bottom-7" : "top-7"}`}
         >
           <div className="border-b border-[#d7d4cf] px-2 pb-2 pt-1">
-            <p className="text-[11px] font-semibold text-[#3f3b37]">Connect your AI agent</p>
-            <p className="mt-0.5 text-[10px] leading-4 text-[#77726c]">{connected ? "The open project is connected to a local MCP agent." : "Start the ShiftCut MCP server, then keep this project tab open."}</p>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-[11px] font-semibold text-[#3f3b37]">{connected ? "MCP connection live" : "Connect your AI agent"}</p>
+              {connected && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.dispatchEvent(new CustomEvent("shiftcut:mcp-disconnect"));
+                    setOpen(false);
+                  }}
+                  className="border border-[#c8a6a1] bg-[#fff8f7] px-2 py-1 text-[9px] font-semibold text-[#a34a3d] hover:bg-[#f7e2df]"
+                >
+                  Disconnect
+                </button>
+              )}
+            </div>
+            <p className="mt-0.5 text-[10px] leading-4 text-[#77726c]">{connected ? "The open project is connected to an MCP agent." : "Connect an MCP agent, then keep this project tab open."}</p>
+            {!connected && (
+              <button
+                type="button"
+                onClick={() => window.dispatchEvent(new CustomEvent("shiftcut:mcp-reconnect"))}
+                className="mt-2 border border-[#bdb9b3] bg-[#f7f6f4] px-2 py-1 text-[9px] font-semibold text-[#5b5751] hover:bg-[#e4e1dc]"
+              >
+                Reconnect
+              </button>
+            )}
           </div>
           {AGENTS.map((agent) => {
             const expanded = expandedAgent === agent.id;
