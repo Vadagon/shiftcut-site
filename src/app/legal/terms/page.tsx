@@ -53,13 +53,41 @@ export default function TermsPage() {
         </p>
       </Section>
 
-      <Section heading="4. Acceptable use">
+      <Section heading="4. Acceptable Use Policy">
         <p>
-          You agree not to use the Service to create, process, or distribute unlawful content,
-          content that infringes others&rsquo; rights, sexually explicit material involving minors,
-          non-consensual or deceptive deepfakes, or content that violates our model providers&rsquo;
-          or Creem&rsquo;s policies. AI Copilot inputs are screened by content moderation, and we may
-          suspend accounts that violate these Terms.
+          You may not use the Service — including any AI generation or editing feature, and whether
+          the content is uploaded, edited, or generated from a prompt — to create, request, process,
+          or distribute:
+        </p>
+        <ul className="list-disc space-y-1.5 pl-5">
+          <li>
+            <strong>NSFW, pornographic, or sexually explicit content of any kind.</strong> The
+            generation or editing of adult, nude, pornographic, or sexually explicit imagery, video,
+            audio, or text is strictly prohibited on the Service.
+          </li>
+          <li>
+            Child sexual abuse material (CSAM) or any sexual content involving minors, real or
+            simulated.
+          </li>
+          <li>
+            Non-consensual sexual or intimate content, or sexualized “deepfakes” or depictions of a
+            real person without their consent.
+          </li>
+          <li>
+            Content that is unlawful, that infringes others&rsquo; intellectual-property or privacy
+            rights, that promotes violence, self-harm, hate, or harassment, or that is designed to
+            deceive or defraud.
+          </li>
+          <li>
+            Anything that violates our model providers&rsquo; or our payment processor Creem&rsquo;s
+            acceptable-use or content policies.
+          </li>
+        </ul>
+        <p>
+          Every prompt submitted to an AI generation or editing feature is screened by an automated
+          content-moderation system before it is processed, and prohibited requests are blocked. We
+          may also review, suspend, or terminate accounts that violate this policy, and report
+          unlawful content to the appropriate authorities.
         </p>
       </Section>
 

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { moderateInput } from "@/lib/moderation";
+import { moderateLatestUserMessage } from "@/lib/moderation";
 
 export const runtime = "nodejs";
 
@@ -42,13 +42,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Only ShiftCut composition requests are allowed." }, { status: 400 });
   }
 
-  // Creem requires AI products to screen input through the Moderation API.
-  const lastUser = [...body.messages].reverse().find((m) => m.role === "user");
-  if (lastUser) {
-    const moderation = await moderateInput(lastUser.content);
-    if (!moderation.allowed) {
-      return NextResponse.json({ error: moderation.reason ?? "This request was blocked by content moderation." }, { status: 422 });
-    }
+  // Creem requires all prompt-driven generation to be screened through the
+  // Content Moderation API before it reaches the model. Fails closed.
+  const moderation = await moderateLatestUserMessage(body.messages);
+  if (!moderation.allowed) {
+    return NextResponse.json({ error: moderation.reason ?? "This request was blocked by content moderation." }, { status: 422 });
   }
 
   const timeoutMs = isComponentPrompt ? COMPONENT_TIMEOUT_MS : PLANNER_TIMEOUT_MS;

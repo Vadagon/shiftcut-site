@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { moderateLatestUserMessage } from "@/lib/moderation";
 
 export const runtime = "nodejs";
 
@@ -16,6 +17,13 @@ export async function POST(request: Request) {
   if (!apiKey) return NextResponse.json({ error: "OpenRouter is not configured." }, { status: 503 });
   const body = await request.json().catch(() => null) as { previousSummary?: unknown; messages?: unknown } | null;
   if (!body || !validMessages(body.messages)) return NextResponse.json({ error: "A valid conversation segment is required." }, { status: 400 });
+
+  // Screen user-supplied content through Creem moderation before processing.
+  const moderation = await moderateLatestUserMessage(body.messages);
+  if (!moderation.allowed) {
+    return NextResponse.json({ error: moderation.reason ?? "This request was blocked by content moderation." }, { status: 422 });
+  }
+
   const previousSummary = typeof body.previousSummary === "string" ? body.previousSummary.slice(0, 8_000) : "";
   const source = body.messages.map((message) => `${message.role.toUpperCase()}: ${message.content}`).join("\n\n");
   const prompt = `Create compact, factual working memory for a video-editing AI assistant. Return ONLY JSON: {"summary":"..."}.\n\nPreserve user goals, visual preferences, decisions, corrections, unresolved requests, and failed approaches worth avoiding. Do NOT repeat timeline state, revision numbers, assets, component code, settings, or debug payloads: those are supplied separately on every request.\n\nExisting memory:\n${previousSummary || "(none)"}\n\nConversation segment to absorb:\n${source}`;

@@ -15,7 +15,7 @@ Copy `.env.example` → `.env.local` and fill in:
 | `CREEM_WEBHOOK_SECRET` | Creem → Developers → Webhooks | Verifies `creem-signature` (HMAC-SHA256) |
 | `CREEM_PRODUCT_ID_MONTHLY` | Product you create for $10/mo | no trial |
 | `CREEM_PRODUCT_ID_YEARLY` | Product you create for $60/yr | |
-| `CREEM_MODERATION_ENABLED` | — | `true` to enforce moderation (required for AI products) |
+| `CREEM_MODERATION_DISABLED` | — | Screening is ON whenever a key is set; `true` disables it (dev only) |
 | `CREEM_MODERATION_API_KEY` | Creem moderation | Optional; defaults to `CREEM_API_KEY` |
 
 ## 2. Create the products in Creem
@@ -59,7 +59,7 @@ expired, past_due) and refunds. Copy the signing secret into `CREEM_WEBHOOK_SECR
 | Billing portal link | `src/app/api/creem/portal/route.ts` |
 | Pricing page | `src/app/pricing/page.tsx` |
 | Success page (checkout `success_url`) | `src/app/billing/success/page.tsx` |
-| Moderation in AI proxy | `src/app/api/chat/route.ts` |
+| Moderation on all prompt endpoints | `src/app/api/chat/route.ts`, `src/app/api/chat/compact/route.ts` |
 
 ## 5. Before going live — TODO
 
@@ -67,9 +67,9 @@ expired, past_due) and refunds. Copy the signing secret into `CREEM_WEBHOOK_SECR
       durable adapter (KV/Postgres). It currently resets on redeploy.
 - [ ] Add a lightweight account/session so `aiActive()` can gate the in-editor chat
       per user (webhook already records status by email + customer id).
-- [ ] Confirm the exact Creem moderation endpoint/response shape against the current
-      API and adjust `src/lib/moderation.ts` if needed.
-- [ ] Flip `CREEM_MODE=live` and `CREEM_MODERATION_ENABLED=true`.
+- [x] Moderation integrated against `POST /v1/moderation/prompt` (allow/flag/deny),
+      enforced on all prompt endpoints, fails closed. Tested: benign→allow, NSFW→deny.
+- [ ] Keep `CREEM_MODE=live`; moderation auto-enforces in prod (key present).
 
 ## Creem account-review checklist → where it's satisfied
 
