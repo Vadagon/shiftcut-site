@@ -12,6 +12,7 @@ import { uid } from "@/lib/utils";
 import { elementEnd, type ElementParams, type TimelineElement, type TimelineTrack, type TrackType } from "@/types/timeline";
 import { validateGeneratedComponentSource } from "@/lib/generated-component-contract";
 import { serializeCompactProject } from "@/lib/composition-dsl";
+import { parseCompactProject } from "@/lib/composition-dsl-parser";
 import { acceptComponentStage, acceptTimelineStage, buildComponentSystemPrompt, buildTimelineSystemPrompt } from "@/lib/ai-composition-protocol";
 
 type ChatMessage = {
@@ -86,6 +87,7 @@ export function AiChat() {
   const [isSending, setIsSending] = useState(false);
   const [retryAttempt, setRetryAttempt] = useState<number | null>(null);
   const [requestPhase, setRequestPhase] = useState<"compacting" | "thinking" | "retrying">("thinking");
+  const [workLabel, setWorkLabel] = useState("Analyzing timeline and project");
   const [historyOpen, setHistoryOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const project = useProjectStore((state) => state.activeProject);
@@ -141,7 +143,7 @@ export function AiChat() {
     if (!value || isSending) return;
     const animationRequested = /\b(?:animate|animation|explode|explosion|burst|particle|motion|bounce|slide|zoom|transition)\b/i.test(value);
     const restructureRequested = /\b(?:restructure|resturcture|reorganize|reorganise|clean up|cleanup|compact)\b.*\b(?:timeline|tracks?)\b|\b(?:timeline|tracks?)\b.*\b(?:restructure|resturcture|reorganize|reorganise|clean up|cleanup|compact)\b/i.test(value);
-    const requestSnapshot = project ? projectSnapshot(project, tracks, pool, components, selectedElementId) : undefined;
+    const requestSnapshot = project ? projectSnapshot(project, tracks, pool, components, selectedElementId, value) : undefined;
     const messageId = requestId ?? uid("msg");
     let transportArtifact: Record<string, unknown> = {
       endpoint: "/api/chat",
@@ -162,12 +164,15 @@ export function AiChat() {
     setDraft("");
     setRetryAttempt(null);
     setRequestPhase("thinking");
+    setWorkLabel("Analyzing timeline and project");
     setIsSending(true);
     try {
       setRequestPhase("compacting");
+      setWorkLabel("Preparing project context");
       const context = project ? await compactContext(project.id, requestMessages, memory) : { memory, messages: modelMessages(requestMessages), compactionTransport: null };
       if (context.memory !== memory) setMemory(context.memory);
       setRequestPhase("thinking");
+      setWorkLabel("Analyzing timeline and project");
       if (!requestSnapshot) throw new Error("No active project composition is available.");
       const systemPrompt = buildTimelineSystemPrompt({
         projectName: requestSnapshot.name,
@@ -178,12 +183,13 @@ export function AiChat() {
       });
       const baseMessages = [{ role: "system" as const, content: systemPrompt }, ...context.messages];
       const attempts: Record<string, unknown>[] = [];
-      async function runStage<T>(stage: "timeline" | "component", stageMessages: Array<{ role: "system" | "user" | "assistant"; content: string }>, accept: (raw: string) => T): Promise<T> {
+      async function runStage<T>(stage: "timeline" | "component", label: string, stageMessages: Array<{ role: "system" | "user" | "assistant"; content: string }>, accept: (raw: string) => T): Promise<T> {
         let retryMessages = stageMessages;
         let lastAcceptanceError = "The model returned an empty response.";
         for (let attempt = 1; attempt <= MAX_RESPONSE_ATTEMPTS; attempt += 1) {
           setRetryAttempt(attempt > 1 ? attempt : null);
           setRequestPhase(attempt > 1 ? "retrying" : "thinking");
+          setWorkLabel(label);
           const requestBody = { messages: retryMessages };
           const attemptStartedAt = currentTimestamp();
           transportArtifact = {
@@ -232,19 +238,27 @@ export function AiChat() {
         throw new Error(`The AI ${stage} response failed acceptance after ${MAX_RESPONSE_ATTEMPTS} attempts: ${lastAcceptanceError}`);
       }
 
-      const firstStage = await runStage("timeline", baseMessages, (raw) => acceptTimelineStage({ rawContent: raw, compactProject: requestSnapshot.compactProject }));
+      const firstStage = await runStage("timeline", "Analyzing and editing timeline", baseMessages, (raw) => acceptTimelineStage({
+        rawContent: raw,
+        compactProject: requestSnapshot.compactProject,
+        userRequest: value,
+        selectedElementId: requestSnapshot.selectedElementId,
+        suggestedElementId: requestSnapshot.suggestedElementId,
+        requireComponentEdit: animationRequested,
+      }));
       let result: ChatResponse;
       if (firstStage.type === "no-changes") {
         result = { reply: firstStage.reply, expectedRevision: firstStage.expectedRevision, operations: [] };
       } else if (firstStage.type === "timeline-edit") {
         result = { reply: firstStage.reply, expectedRevision: firstStage.expectedRevision, operations: [{ action: "replace_timeline", tracks: firstStage.tracks, compositionSource: firstStage.source }] };
       } else {
+        setWorkLabel(`Loading component source: ${firstStage.name ?? firstStage.componentId}`);
         const revisionBeforeFocus = useProjectStore.getState().activeProject?.revision;
         if (revisionBeforeFocus !== requestSnapshot.revision) throw new Error("The project changed before the focused component request. Retry with the current revision.");
         const artifact = firstStage.componentId.startsWith("new:") ? undefined : useComponentStore.getState().get(firstStage.componentId);
         if (!firstStage.componentId.startsWith("new:") && !artifact) throw new Error("The requested component source is unavailable in the current revision.");
         const componentPrompt = buildComponentSystemPrompt({ compactProject: requestSnapshot.compactProject, originalRequest: value, request: firstStage, artifact });
-        const componentStage = await runStage("component", [{ role: "system", content: componentPrompt }, { role: "user", content: value }], (raw) =>
+        const componentStage = await runStage("component", `Component requested · editing ${artifact?.name ?? firstStage.name ?? firstStage.componentId}`, [{ role: "system", content: componentPrompt }, { role: "user", content: value }], (raw) =>
           acceptComponentStage({ rawContent: raw, compactProject: requestSnapshot.compactProject, request: firstStage, requireAnimation: animationRequested }),
         );
         const operation = artifact
@@ -253,6 +267,9 @@ export function AiChat() {
         result = { reply: componentStage.reply, expectedRevision: componentStage.expectedRevision, operations: [operation] };
       }
       transportArtifact = { ...transportArtifact, response: { attempts: [...attempts], finalResult: result, completedAt: currentTimestamp() } };
+      setWorkLabel("Applying accepted changes");
+      setRequestPhase("thinking");
+      setRetryAttempt(null);
       const reply = result.reply ?? result.content;
       if (!reply) throw new Error(result.error ?? "AI response failed.");
       const currentRevision = useProjectStore.getState().activeProject?.revision;
@@ -282,6 +299,7 @@ export function AiChat() {
       setIsSending(false);
       setRetryAttempt(null);
       setRequestPhase("thinking");
+      setWorkLabel("Analyzing timeline and project");
     }
   };
 
@@ -305,13 +323,13 @@ export function AiChat() {
                 {message.tools && <div className="mb-2 flex items-center gap-2 text-[12px] text-[#807d78]"><span className="h-2 w-2 rounded-full bg-[#438d58]" />{message.tools}</div>}
                 <MessageText content={message.body} />
                 {message.role === "user" && message.status && message.status !== "complete" && <div className="mt-2 flex items-center justify-between gap-3 border-t border-[#c9c7c2] pt-2 text-[10px] text-[#77726c]">
-                  <span className={message.status === "failed" ? "text-[#b64132]" : undefined}>{message.status === "failed" ? `Failed: ${message.error ?? "No response"}` : requestPhase === "compacting" ? "Compressing older conversation" : requestPhase === "retrying" ? `Response check failed — retrying ${retryAttempt ?? 1}/3` : "Waiting for AI response"}</span>
+                  <span className={message.status === "failed" ? "text-[#b64132]" : undefined}>{message.status === "failed" ? `Failed: ${message.error ?? "No response"}` : statusText(workLabel, requestPhase, retryAttempt)}</span>
                   <button type="button" disabled={isSending} onClick={() => void sendRequest(message.body, message.id)} className="font-semibold text-[#57524c] underline underline-offset-2 hover:text-[#292724] disabled:opacity-50">Retry</button>
                 </div>}
               </div>
             </div>
           ))}
-          {isSending && <ThinkingIndicator retryAttempt={retryAttempt} phase={requestPhase} />}
+          {isSending && <ThinkingIndicator retryAttempt={retryAttempt} phase={requestPhase} workLabel={workLabel} />}
           <div ref={messagesEndRef} />
         </div>
       </div>
@@ -344,10 +362,16 @@ function MessageText({ content }: { content: string }) {
   );
 }
 
-function ThinkingIndicator({ retryAttempt, phase }: { retryAttempt: number | null; phase: "compacting" | "thinking" | "retrying" }) {
+function statusText(workLabel: string, phase: "compacting" | "thinking" | "retrying", retryAttempt: number | null) {
+  if (phase === "compacting") return "Preparing project context";
+  if (phase === "retrying") return `${workLabel} — response invalid, retrying ${retryAttempt ?? 2}/3`;
+  return workLabel;
+}
+
+function ThinkingIndicator({ retryAttempt, phase, workLabel }: { retryAttempt: number | null; phase: "compacting" | "thinking" | "retrying"; workLabel: string }) {
   return (
     <div role="status" aria-live="polite" className="flex items-center gap-2 text-[13px] text-[#77726c]">
-      <span>{phase === "compacting" ? "Compressing older conversation" : retryAttempt ? `Response check failed — retrying ${retryAttempt}/3` : "Thinking"}</span>
+      <span>{statusText(workLabel, phase, retryAttempt)}</span>
       <span className="flex gap-1" aria-hidden="true"><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#8a857e] [animation-delay:-0.2s]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#8a857e] [animation-delay:-0.1s]" /><i className="h-1.5 w-1.5 animate-bounce rounded-full bg-[#8a857e]" /></span>
     </div>
   );
@@ -364,82 +388,26 @@ function HistoryDrawer({ messages, onClose }: { messages: ChatMessage[]; onClose
       setCopiedKey(null);
     }
   };
-  const copyExchange = async (requestIndex: number, responseIndex?: number) => {
+  const copyExchange = async (requestIndex: number, responseIndex: number | undefined, level: "summary" | "full") => {
     const request = messages[requestIndex];
     const response = responseIndex === undefined ? undefined : messages[responseIndex];
-    const status = request.status ?? (response ? "complete" : "unfinished");
-    const transport = request.artifact?.transport ?? response?.artifact?.transport ?? null;
-    const transportRecord = asRecord(transport);
-    const transportResponse = asRecord(transportRecord?.response);
-    const attempts = Array.isArray(transportResponse?.attempts) ? transportResponse.attempts : [];
     const activeProject = useProjectStore.getState().activeProject;
     const currentTracks = useTimelineStore.getState().tracks;
     const currentComponents = useComponentStore.getState().components;
     const currentAssets = useMediaStore.getState().pool;
-    const fullPayload = {
-      debugLogVersion: "shiftcut-debug/v2",
-      exportedAt: new Date().toISOString(),
-      runtime: {
-        pageUrl: window.location.href,
-        userAgent: navigator.userAgent,
-        language: navigator.language,
-        online: navigator.onLine,
-      },
-      selectedExchange: {
-        request: { id: request.id, message: request.body, status, error: request.error ?? null, artifact: request.artifact ?? null },
-        assistant: response ? { id: response.id, message: response.body, tools: response.tools ?? null, status: response.status ?? "complete", error: response.error ?? null, artifact: response.artifact ?? null } : null,
-      },
-      conversationLog: messages.map((message) => ({
-        id: message.id,
-        role: message.role,
-        content: message.body,
-        status: message.status ?? null,
-        error: message.error ?? null,
-        tools: message.tools ?? null,
-      })),
-      aiTransport: transport,
-      acceptanceTestSuite: {
-        location: "browser client",
-        maxAttempts: MAX_RESPONSE_ATTEMPTS,
-        rules: [
-          "Timeline stage root is exactly TimelineEdit, RequestComponent, or NoChanges",
-          "Component stage root is exactly ComponentEdit",
-          "Expected revision matches the compact project revision at every stage",
-          "TimelineEdit returns a complete ordered track list",
-          "Primitive element parameters use normal JSX attributes; String.raw is reserved for structured values",
-          "Timeline media/component references resolve against compact project summaries",
-          "RequestComponent targets an existing component or supplies valid new: IDs and placement",
-          "ComponentEdit target and base identifiers match RequestComponent exactly",
-          "Generated source compiles and passes the deterministic runtime safety contract",
-          "Clip timing and duration are finite, positive, frame-aligned, and trims are valid",
-          "Elements do not overlap within a track",
-          "Animation requests include component code driven by props.localTime",
-          "Browser revision still matches before operations are applied",
-          "Compiled timeline and component artifacts can be applied atomically",
-        ],
-        attemptResults: attempts.map((attempt, index) => {
-          const record = asRecord(attempt);
-          const attemptResponse = asRecord(record?.response);
-          const body = asRecord(attemptResponse?.body);
-          return {
-            attempt: record?.attempt ?? index + 1,
-            acceptance: record?.acceptance ?? null,
-            httpStatus: attemptResponse?.status ?? null,
-            rawModelResponse: body?.content ?? null,
-            upstreamDiagnostics: body?.upstream ?? null,
-          };
-        }),
-      },
-      editorStateAtExport: {
+    const payload = buildDebugLog({
+      messages, request, response, level,
+      runtime: { pageUrl: window.location.href, userAgent: navigator.userAgent, language: navigator.language, online: navigator.onLine },
+      editorState: {
         project: activeProject,
         selectedElementId: useTimelineStore.getState().selectedElementId,
         timelineWithComponentCode: timelineContext(currentTracks, currentComponents, true),
         componentRegistry: Object.values(currentComponents),
         assets: currentAssets.map((asset) => ({ id: asset.id, name: asset.name, kind: asset.kind, mime: asset.mime, duration: asset.duration, width: asset.width, height: asset.height, size: asset.size })),
       },
-      editorResult: request.artifact?.editorResult ?? response?.artifact?.response ?? null,
-    };
-    await copy(`exchange-${requestIndex}`, `# ShiftCut full debug log\n\n${JSON.stringify(fullPayload, null, 2)}`);
+    });
+    const label = level === "summary" ? "ShiftCut debug summary" : "ShiftCut full debug log";
+    await copy(`${level}-${requestIndex}`, `# ${label}\n\n${JSON.stringify(payload, null, 2)}`);
   };
   const requests = messages.flatMap((message, requestIndex) => {
     if (message.role !== "user") return [];
@@ -466,7 +434,10 @@ function HistoryDrawer({ messages, onClose }: { messages: ChatMessage[]; onClose
                 <div className={`mt-2 text-[10px] font-semibold ${statusColor}`}>{statusLabel}{request.error ? ` — ${request.error}` : ""}</div>
                 {response && <><div className="mb-2 mt-3 text-[10px] font-semibold uppercase tracking-[.08em] text-[#89857e]">Response</div>
                   <p className="line-clamp-5 whitespace-pre-wrap text-[11px] leading-4 text-[#49453f]">{response.body}</p></>}
-                <button type="button" title="Copies a complete editor debugging bundle: conversation, every AI attempt and raw response, complete JSX prompts, acceptance tests and failures, provider diagnostics, editor state, component code, assets, revisions, and application results." onClick={() => void copyExchange(requestIndex, responseIndex)} className="mt-3 border border-[#c9c7c2] bg-[#efeeeb] px-2 py-1 text-[10px] font-medium text-[#56514c] hover:border-[#77736d]">{copiedKey === `exchange-${requestIndex}` ? "Debug log copied" : "Copy full debug log"}</button>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button type="button" title="Copies a concise diagnosis: stages, targets, revision outcome, project diff, failed tests, timing, token use, and warnings." onClick={() => void copyExchange(requestIndex, responseIndex, "summary")} className="border border-[#c9c7c2] bg-[#efeeeb] px-2 py-1 text-[10px] font-medium text-[#56514c] hover:border-[#77736d]">{copiedKey === `summary-${requestIndex}` ? "Summary copied" : "Copy debug summary"}</button>
+                  <button type="button" title="Copies the summary plus deduplicated raw prompts, responses, transport diagnostics, conversation, and editor state." onClick={() => void copyExchange(requestIndex, responseIndex, "full")} className="border border-[#c9c7c2] bg-[#efeeeb] px-2 py-1 text-[10px] font-medium text-[#56514c] hover:border-[#77736d]">{copiedKey === `full-${requestIndex}` ? "Full log copied" : "Copy full debug log"}</button>
+                </div>
                 {response && <HistoryArtifact artifact={response.artifact} index={responseIndex!} copiedKey={copiedKey} onCopy={copy} />}
               </article>;
             })}
@@ -475,6 +446,321 @@ function HistoryDrawer({ messages, onClose }: { messages: ChatMessage[]; onClose
       </div>
     </div>
   );
+}
+
+const ACCEPTANCE_RULES = [
+  "Response root matches the active stage",
+  "Expected revision matches the compact project",
+  "Timeline edit returns a complete ordered track list",
+  "References resolve against the compact project",
+  "Component target and base identifiers remain continuous across stages",
+  "Generated component compiles and passes runtime safety checks",
+  "Timing is finite, positive, frame-aligned, and trims are valid",
+  "Elements do not overlap within a track",
+  "Requested animation is deterministic and driven by localTime",
+  "Browser revision still matches before atomic application",
+];
+
+type DebugLogInput = {
+  messages: ChatMessage[];
+  request: ChatMessage;
+  response?: ChatMessage;
+  level: "summary" | "full";
+  runtime: Record<string, unknown>;
+  editorState: Record<string, unknown>;
+};
+
+function buildDebugLog({ messages, request, response, level, runtime, editorState }: DebugLogInput) {
+  const transport = request.artifact?.transport ?? response?.artifact?.transport ?? null;
+  const transportRecord = asRecord(transport);
+  const transportResponse = asRecord(transportRecord?.response);
+  const attempts = Array.isArray(transportResponse?.attempts) ? transportResponse.attempts.map(asRecord).filter(Boolean) as Record<string, unknown>[] : [];
+  const result = asRecord(response?.artifact?.response) ?? asRecord(request.artifact?.editorResult);
+  const requestSnapshot = asRecord(response?.artifact?.request);
+  const compactProject = typeof requestSnapshot?.compactProject === "string" ? requestSnapshot.compactProject : "";
+  let beforeTracks: Record<string, unknown>[] = [];
+  try { beforeTracks = compactProject ? parseCompactProject(compactProject).tracks : []; } catch { /* Included as a warning below. */ }
+  const afterTracks = Array.isArray(result?.timelineAfter) ? result.timelineAfter.map(asRecord).filter(Boolean) as Record<string, unknown>[] : [];
+  const projectDiff = diffTimelines(beforeTracks, afterTracks);
+  const stageTimeline = attempts.map((attempt, index) => summarizeAttempt(attempt, index));
+  const failedTests = stageTimeline.flatMap((attempt) => attempt.acceptance.passed ? [] : [{
+    stage: attempt.stage,
+    attempt: attempt.attempt,
+    error: attempt.acceptance.error ?? "Response rejected without a saved reason.",
+  }]);
+  const acceptedStages = stageTimeline.filter((attempt) => attempt.acceptance.passed).map((attempt) => `${attempt.stage} attempt ${attempt.attempt}`);
+  const selectedElementId = stringOrNull(requestSnapshot?.selectedElementId);
+  const suggestedElementId = stringOrNull(requestSnapshot?.suggestedElementId);
+  const requestedTargets = stageTimeline.flatMap((attempt) => attempt.target.elementId ? [attempt.target] : []);
+  const applied = Array.isArray(result?.applied) ? result.applied : [];
+  const status = request.status ?? (response ? "complete" : "unfinished");
+  const warnings = debugWarnings({
+    status, attempts: stageTimeline, selectedElementId, suggestedElementId, requestedTargets,
+    projectDiff, applied, revisionMatches: result?.revisionMatches,
+    compactProjectParsed: !compactProject || beforeTracks.length > 0,
+  });
+  const performance = summarizePerformance(transportRecord, transportResponse, stageTimeline);
+  const log: Record<string, unknown> = {
+    debugLogVersion: "shiftcut-debug/v3",
+    level,
+    exportedAt: new Date().toISOString(),
+    summary: {
+      request: request.body,
+      status,
+      error: request.error ?? response?.error ?? transportResponse?.error ?? null,
+      assistantReply: response?.body ?? null,
+      stages: [...new Set(stageTimeline.map((attempt) => attempt.stage))],
+      attempts: stageTimeline.length,
+      applied,
+      revision: {
+        sent: requestSnapshot?.revision ?? null,
+        expected: result?.expectedRevision ?? null,
+        receivedAt: result?.receivedAtRevision ?? null,
+        matched: result?.revisionMatches ?? null,
+      },
+      warnings,
+    },
+    stageTimeline,
+    targetResolution: {
+      selectedElementId,
+      suggestedElementId,
+      requestedTargets,
+      continuity: targetContinuity(requestedTargets),
+    },
+    projectDiff,
+    acceptance: {
+      location: "browser client",
+      maxAttemptsPerStage: MAX_RESPONSE_ATTEMPTS,
+      failed: failedTests,
+      criticalPassed: acceptedStages,
+      rules: ACCEPTANCE_RULES,
+    },
+    performance,
+  };
+  if (level === "full") {
+    log.rawEvidence = deduplicatedEvidence({ messages, request, response, attempts, compactProject, transportRecord, editorState, runtime });
+  }
+  return log;
+}
+
+function summarizeAttempt(attempt: Record<string, unknown>, index: number) {
+  const response = asRecord(attempt.response);
+  const body = asRecord(response?.body);
+  const upstream = asRecord(body?.upstream);
+  const usage = asRecord(upstream?.usage);
+  const routing = asRecord(upstream?.routing);
+  const acceptance = asRecord(attempt.acceptance);
+  const content = typeof body?.content === "string" ? body.content.trim() : "";
+  const root = firstTag(content);
+  const startedAt = finite(attempt.startedAt, 0);
+  const completedAt = finite(response?.completedAt, 0);
+  return {
+    stage: typeof attempt.stage === "string" ? attempt.stage : "unknown",
+    attempt: finite(attempt.attempt, index + 1),
+    result: acceptance?.passed === true ? "accepted" : "rejected",
+    responseRoot: root,
+    httpStatus: response?.status ?? null,
+    durationMs: startedAt && completedAt ? Math.max(0, completedAt - startedAt) : null,
+    acceptance: { passed: acceptance?.passed === true, error: stringOrNull(acceptance?.error) },
+    target: root === "RequestComponent" || root === "ComponentEdit" ? responseTarget(content) : { elementId: null, componentId: null, componentVersion: null },
+    provider: {
+      requestId: upstream?.requestId ?? null,
+      model: upstream?.model ?? routing?.requested ?? null,
+      finishReason: upstream?.finishReason ?? upstream?.nativeFinishReason ?? null,
+      region: routing?.region ?? null,
+    },
+    usage: {
+      promptTokens: finite(usage?.prompt_tokens, 0),
+      completionTokens: finite(usage?.completion_tokens, 0),
+      reasoningTokens: finite(asRecord(usage?.completion_tokens_details)?.reasoning_tokens, 0),
+      totalTokens: finite(usage?.total_tokens, 0),
+      costUsd: finite(usage?.cost, 0),
+    },
+  };
+}
+
+function firstTag(source: string) {
+  return source.match(/^\s*(?:```(?:jsx|tsx|javascript)?\s*)?<([A-Za-z][\w]*)/)?.[1] ?? null;
+}
+
+function responseTarget(source: string) {
+  return {
+    elementId: jsxStringAttribute(source, "elementId") ?? jsxStringAttribute(source, "targetElementId"),
+    componentId: jsxStringAttribute(source, "componentId") ?? jsxStringAttribute(source, "baseComponentId"),
+    componentVersion: jsxNumberAttribute(source, "componentVersion") ?? jsxNumberAttribute(source, "baseComponentVersion"),
+  };
+}
+
+function jsxStringAttribute(source: string, name: string) {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return source.match(new RegExp(`\\b${escaped}=\\{?["']([^"']+)["']\\}?`))?.[1] ?? null;
+}
+
+function jsxNumberAttribute(source: string, name: string) {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = source.match(new RegExp(`\\b${escaped}=\\{?(-?\\d+(?:\\.\\d+)?)\\}?`));
+  return match ? Number(match[1]) : null;
+}
+
+function flattenDebugElements(tracks: Record<string, unknown>[]) {
+  return tracks.flatMap((track, trackIndex): Record<string, unknown>[] => {
+    const elements = Array.isArray(track.elements) ? track.elements.map(asRecord).filter(Boolean) as Record<string, unknown>[] : [];
+    return elements.map((element, elementIndex): Record<string, unknown> => ({ ...element, trackId: track.id, trackIndex, elementIndex }));
+  });
+}
+
+function diffTimelines(beforeTracks: Record<string, unknown>[], afterTracks: Record<string, unknown>[]) {
+  const beforeTrackIds = beforeTracks.map((track) => String(track.id ?? ""));
+  const afterTrackIds = afterTracks.map((track) => String(track.id ?? ""));
+  const beforeElements = flattenDebugElements(beforeTracks);
+  const afterElements = flattenDebugElements(afterTracks);
+  const beforeById = new Map(beforeElements.map((element) => [String(element.id), element]));
+  const afterById = new Map(afterElements.map((element) => [String(element.id), element]));
+  const added = afterElements.filter((element) => !beforeById.has(String(element.id))).map(elementDigest);
+  const removed = beforeElements.filter((element) => !afterById.has(String(element.id))).map(elementDigest);
+  const watched = ["name", "trackId", "startTime", "duration", "trimStart", "trimEnd", "mediaId", "componentId", "componentVersion", "params"];
+  const updated = afterElements.flatMap((after) => {
+    const before = beforeById.get(String(after.id));
+    if (!before) return [];
+    const changedFields = watched.filter((key) => stableJson(before[key]) !== stableJson(after[key]));
+    return changedFields.length ? [{ id: after.id, name: after.name, changedFields }] : [];
+  });
+  return {
+    available: beforeTracks.length > 0 && afterTracks.length > 0,
+    tracks: {
+      added: afterTrackIds.filter((id) => !beforeTrackIds.includes(id)),
+      removed: beforeTrackIds.filter((id) => !afterTrackIds.includes(id)),
+      reordered: stableJson(beforeTrackIds.filter((id) => afterTrackIds.includes(id))) !== stableJson(afterTrackIds.filter((id) => beforeTrackIds.includes(id))),
+      beforeCount: beforeTracks.length,
+      afterCount: afterTracks.length,
+    },
+    elements: { added, removed, updated, beforeCount: beforeElements.length, afterCount: afterElements.length },
+    durationSeconds: { before: timelineDuration(beforeElements), after: timelineDuration(afterElements) },
+  };
+}
+
+function elementDigest(element: Record<string, unknown>) {
+  return { id: element.id ?? null, name: element.name ?? null, trackId: element.trackId ?? null, startTime: element.startTime ?? null, duration: element.duration ?? null, componentId: element.componentId ?? null, mediaId: element.mediaId ?? null };
+}
+
+function timelineDuration(elements: Record<string, unknown>[]) {
+  return elements.reduce((maximum, element) => Math.max(maximum, finite(element.startTime, 0) + finite(element.duration, 0) - finite(element.trimStart, 0) - finite(element.trimEnd, 0)), 0);
+}
+
+function targetContinuity(targets: Array<{ elementId: string | null; componentId: string | null; componentVersion: number | null }>) {
+  if (targets.length < 2) return targets.length === 1 ? "single-stage target" : "no explicit target";
+  const first = targets[0];
+  return targets.every((target) => target.elementId === first.elementId && target.componentId === first.componentId) ? "matched across stages" : "target changed across stages";
+}
+
+function debugWarnings(input: {
+  status: string;
+  attempts: ReturnType<typeof summarizeAttempt>[];
+  selectedElementId: string | null;
+  suggestedElementId: string | null;
+  requestedTargets: Array<{ elementId: string | null; componentId: string | null; componentVersion: number | null }>;
+  projectDiff: ReturnType<typeof diffTimelines>;
+  applied: unknown[];
+  revisionMatches: unknown;
+  compactProjectParsed: boolean;
+}) {
+  const warnings: string[] = [];
+  if (input.status === "failed") warnings.push("request-failed");
+  if (input.attempts.some((attempt) => attempt.attempt > 1)) warnings.push("response-retried");
+  if (input.attempts.some((attempt) => attempt.responseRoot === null)) warnings.push("empty-or-unrecognized-model-response");
+  if (input.revisionMatches === false) warnings.push("project-revision-changed-before-apply");
+  if (input.attempts.some((attempt) => attempt.acceptance.passed) && input.applied.length === 0 && input.status === "complete") warnings.push("accepted-with-no-editor-change");
+  if (input.projectDiff.tracks.added.length) warnings.push("tracks-added");
+  if (input.projectDiff.tracks.removed.length) warnings.push("tracks-removed");
+  if (input.projectDiff.elements.added.length) warnings.push("elements-added");
+  if (input.projectDiff.durationSeconds.before !== input.projectDiff.durationSeconds.after) warnings.push("timeline-duration-changed");
+  if (!input.compactProjectParsed) warnings.push("sent-project-could-not-be-parsed-for-diff");
+  const targetIds = input.requestedTargets.map((target) => target.elementId).filter(Boolean);
+  if (input.selectedElementId && targetIds.length && !targetIds.includes(input.selectedElementId)) warnings.push("selected-element-was-not-targeted");
+  if (!input.selectedElementId && input.suggestedElementId && targetIds.length && !targetIds.includes(input.suggestedElementId)) warnings.push("suggested-element-was-not-targeted");
+  if (targetContinuity(input.requestedTargets) === "target changed across stages") warnings.push("component-target-changed-between-stages");
+  return warnings;
+}
+
+function summarizePerformance(transport: Record<string, unknown> | null, response: Record<string, unknown> | null, attempts: ReturnType<typeof summarizeAttempt>[]) {
+  const startedAt = finite(transport?.startedAt, 0);
+  const completedAt = finite(response?.completedAt, 0);
+  return {
+    totalDurationMs: startedAt && completedAt ? Math.max(0, completedAt - startedAt) : null,
+    attempts: attempts.length,
+    promptTokens: attempts.reduce((sum, attempt) => sum + attempt.usage.promptTokens, 0),
+    completionTokens: attempts.reduce((sum, attempt) => sum + attempt.usage.completionTokens, 0),
+    reasoningTokens: attempts.reduce((sum, attempt) => sum + attempt.usage.reasoningTokens, 0),
+    totalTokens: attempts.reduce((sum, attempt) => sum + attempt.usage.totalTokens, 0),
+    costUsd: attempts.reduce((sum, attempt) => sum + attempt.usage.costUsd, 0),
+  };
+}
+
+function deduplicatedEvidence(input: {
+  messages: ChatMessage[];
+  request: ChatMessage;
+  response?: ChatMessage;
+  attempts: Record<string, unknown>[];
+  compactProject: string;
+  transportRecord: Record<string, unknown> | null;
+  editorState: Record<string, unknown>;
+  runtime: Record<string, unknown>;
+}) {
+  const blobs: Record<string, { kind: string; value: unknown }> = {};
+  const refs = new Map<string, string>();
+  const add = (kind: string, value: unknown) => {
+    const serialized = stableJson(value);
+    const existing = refs.get(serialized);
+    if (existing) return existing;
+    const ref = `blob-${Object.keys(blobs).length + 1}`;
+    refs.set(serialized, ref);
+    blobs[ref] = { kind, value };
+    return ref;
+  };
+  const compactProjectRef = input.compactProject ? add("compact-project-jsx", input.compactProject) : null;
+  const attemptEvidence = input.attempts.map((attempt, index) => {
+    const response = asRecord(attempt.response);
+    const body = asRecord(response?.body);
+    const requestBody = asRecord(attempt.requestBody);
+    const requestMessages = Array.isArray(requestBody?.messages) ? requestBody.messages.map(asRecord).filter(Boolean) as Record<string, unknown>[] : [];
+    const normalizedMessages = requestMessages.map((message) => ({
+      ...message,
+      content: typeof message.content === "string" && input.compactProject
+        ? message.content.replaceAll(input.compactProject, `[[see ${compactProjectRef}]]`)
+        : message.content,
+    }));
+    return {
+      stage: attempt.stage ?? "unknown",
+      attempt: attempt.attempt ?? index + 1,
+      requestMessagesRef: add("ai-request-messages", normalizedMessages),
+      rawResponseRef: add("raw-model-response", body?.content ?? null),
+      upstreamDiagnosticsRef: add("upstream-diagnostics", body?.upstream ?? null),
+      http: { status: response?.status ?? null, statusText: response?.statusText ?? null, headers: response?.headers ?? null },
+      acceptance: attempt.acceptance ?? null,
+    };
+  });
+  return {
+    note: "Large values are stored once in blobs and referenced by ID.",
+    compactProjectRef,
+    selectedExchangeRef: add("selected-exchange", {
+      request: { id: input.request.id, message: input.request.body, status: input.request.status ?? null, error: input.request.error ?? null, artifact: input.request.artifact ?? null },
+      response: input.response ? { id: input.response.id, message: input.response.body, status: input.response.status ?? null, error: input.response.error ?? null, tools: input.response.tools ?? null, artifact: input.response.artifact ?? null } : null,
+    }),
+    conversationRef: add("conversation", input.messages.map((message) => ({ id: message.id, role: message.role, content: message.body, status: message.status ?? null, error: message.error ?? null, tools: message.tools ?? null }))),
+    transportEnvelopeRef: add("transport-envelope", input.transportRecord ? { ...input.transportRecord, response: undefined } : null),
+    editorStateRef: add("editor-state-at-export", input.editorState),
+    runtimeRef: add("runtime", input.runtime),
+    attempts: attemptEvidence,
+    blobs,
+  };
+}
+
+function stableJson(value: unknown) {
+  try { return JSON.stringify(value); } catch { return String(value); }
+}
+
+function stringOrNull(value: unknown) {
+  return typeof value === "string" && value ? value : null;
 }
 
 function HistoryArtifact({ artifact, index, copiedKey, onCopy }: { artifact?: Record<string, unknown>; index: number; copiedKey: string | null; onCopy: (key: string, text: string) => Promise<void> }) {
@@ -521,12 +807,20 @@ function HistoryArtifact({ artifact, index, copiedKey, onCopy }: { artifact?: Re
   );
 }
 
-function projectSnapshot(project: NonNullable<ReturnType<typeof useProjectStore.getState>["activeProject"]>, tracks: TimelineTrack[], pool: ReturnType<typeof useMediaStore.getState>["pool"], components: ReturnType<typeof useComponentStore.getState>["components"], selectedElementId: string | null) {
+function projectSnapshot(project: NonNullable<ReturnType<typeof useProjectStore.getState>["activeProject"]>, tracks: TimelineTrack[], pool: ReturnType<typeof useMediaStore.getState>["pool"], components: ReturnType<typeof useComponentStore.getState>["components"], selectedElementId: string | null, userRequest = "") {
   // A click in the timeline is always the explicit target. When the user has
   // not clicked one, give the assistant a deterministic fallback instead of
   // making a vague animation request target an arbitrary layer.
   const generatedElements = tracks.flatMap((track) => track.elements.filter((element) => Boolean(element.componentId)));
-  const suggestedElementId = selectedElementId ?? (generatedElements.length === 1 ? generatedElements[0].id : null);
+  const requestWords = new Set(userRequest.toLowerCase().match(/[a-z0-9]+/g)?.filter((word) => word.length > 2) ?? []);
+  const ranked = generatedElements.map((element) => {
+    const component = element.componentId ? components[element.componentId] : undefined;
+    const searchable = `${element.name} ${component?.name ?? ""} ${component?.description ?? ""} ${String(element.params.text ?? "")}`.toLowerCase();
+    const score = [...requestWords].reduce((total, word) => total + (searchable.includes(word) ? 1 : 0), 0);
+    return { id: element.id, score };
+  }).sort((a, b) => b.score - a.score);
+  const lexicalSuggestion = ranked[0]?.score > 0 && ranked[0].score > (ranked[1]?.score ?? -1) ? ranked[0].id : null;
+  const suggestedElementId = selectedElementId ?? (generatedElements.length === 1 ? generatedElements[0].id : lexicalSuggestion);
   return {
     name: project.name,
     revision: project.revision,
@@ -572,6 +866,7 @@ function applyOperations(operations: TimelineOperation[], requireTimelineTime = 
       const fps = useProjectStore.getState().activeProject?.settings.fps ?? 30;
       const replacement = replacementTimeline(operation.tracks, pool, requireTimelineTime, fps);
       if (!replacement) continue;
+      if (sameTimeline(store.tracks, replacement)) continue;
       store.replaceTimeline(replacement);
       applied.push("entire timeline");
       break;
@@ -662,6 +957,31 @@ function applyOperations(operations: TimelineOperation[], requireTimelineTime = 
     applied.push("empty tracks");
   }
   return [...new Set(applied)];
+}
+
+function sameTimeline(left: TimelineTrack[], right: TimelineTrack[]) {
+  const comparable = (items: TimelineTrack[]) => items.map((track) => ({
+    id: track.id,
+    name: track.name,
+    type: track.type,
+    muted: track.muted,
+    hidden: track.hidden,
+    locked: track.locked,
+    elements: track.elements.map((element) => ({
+      id: element.id,
+      name: element.name,
+      component: element.component,
+      componentId: element.componentId,
+      componentVersion: element.componentVersion,
+      mediaId: element.mediaId,
+      startTime: element.startTime,
+      duration: element.duration,
+      trimStart: element.trimStart,
+      trimEnd: element.trimEnd,
+      params: element.params,
+    })),
+  }));
+  return JSON.stringify(comparable(left)) === JSON.stringify(comparable(right));
 }
 
 function replacementTimeline(value: unknown, pool: ReturnType<typeof useMediaStore.getState>["pool"], requireTimelineTime: boolean, fps: number): TimelineTrack[] | null {

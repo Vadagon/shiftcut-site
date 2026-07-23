@@ -34,6 +34,36 @@ const request = acceptTimelineStage({
 });
 if (request.type !== "request-component") throw new Error("RequestComponent failed.");
 
+let duplicateRejected = false;
+try {
+  acceptTimelineStage({
+    compactProject,
+    userRequest: "Make the title animation more epic",
+    suggestedElementId: "e1",
+    rawContent: `<RequestComponent expectedRevision={9} reply={"Create duplicate"} elementId={"new:title"} componentId={"new:title"} componentVersion={1} trackId={"v1"} start={0} duration={5} />`,
+  });
+} catch {
+  duplicateRejected = true;
+}
+if (!duplicateRejected) throw new Error("Existing target continuity failed.");
+
+let animationTimelineRejected = false;
+try {
+  acceptTimelineStage({
+    compactProject,
+    userRequest: "Make the explosion more epic",
+    requireComponentEdit: true,
+    rawContent: `<TimelineEdit expectedRevision={9} reply={"Done"}>
+      <VisualTrack id={"v1"} name={"V1"} muted={false} hidden={false} locked={false}>
+        <Component elementId={"e1"} name={"Title"} componentId={"c1"} componentVersion={2} start={0} duration={5} trimStart={0} trimEnd={0} text={"Old"} x={540} y={960} scale={1} rotation={0} opacity={1} zIndex={2} />
+      </VisualTrack>
+    </TimelineEdit>`,
+  });
+} catch {
+  animationTimelineRejected = true;
+}
+if (!animationTimelineRejected) throw new Error("Animation request incorrectly accepted a TimelineEdit.");
+
 const component = acceptComponentStage({
   compactProject,
   request,
@@ -51,4 +81,4 @@ const newRequest = acceptTimelineStage({
 if (newRequest.type !== "request-component" || newRequest.params.text !== "Boom") throw new Error("New RequestComponent failed.");
 if (compactProject.includes(code)) throw new Error("Compact project leaked component source.");
 
-console.log(JSON.stringify({ compactProject: "no component code", timelineEdit: "accepted", componentRequest: "accepted", componentEdit: "accepted", newComponentRequest: "accepted" }));
+console.log(JSON.stringify({ compactProject: "no component code", timelineEdit: "accepted", componentRequest: "accepted", existingTargetContinuity: "duplicate rejected", animationTimelineFallback: "rejected", componentEdit: "accepted", newComponentRequest: "accepted" }));

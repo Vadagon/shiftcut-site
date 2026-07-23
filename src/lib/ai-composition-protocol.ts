@@ -15,6 +15,11 @@ export function buildTimelineSystemPrompt(input: {
   suggestedElementId: string | null;
 }) {
   const current = parseCompactProject(input.compactProject);
+  const componentTargets = current.tracks.flatMap((track) => (track.elements as Array<Record<string, unknown>>).flatMap((element) =>
+    typeof element.componentId === "string"
+      ? [`- elementId=${String(element.id)}, componentId=${element.componentId}, componentVersion=${String(element.componentVersion)}, name=${String(element.name)}`]
+      : [],
+  )).join("\n");
   return `You are ShiftCut's video-editing assistant for "${input.projectName}". The complete compact project below is the only current truth.
 
 Return exactly one restricted JSX root and nothing else:
@@ -48,6 +53,9 @@ TimelineEdit rules:
 
 Selected element: ${input.selectedElementId ?? "none"}.
 Suggested generated-component target: ${input.suggestedElementId ?? "none"}.
+Valid existing component target tuples (never mix identifiers from different lines):
+${componentTargets || "(none)"}
+When the user asks to improve, regenerate, intensify, restyle, or otherwise modify an existing visual and a selected/suggested generated component is listed, RequestComponent MUST use that existing element's exact elementId, componentId, and version. Never create a new: component unless the user explicitly asks to add, create, duplicate, or make another separate element.
 Current revision: ${current.revision}. Every root must use expectedRevision={${current.revision}}.
 
 Compact memory (context only):
@@ -57,12 +65,20 @@ COMPACT PROJECT:
 ${input.compactProject}`;
 }
 
-export function acceptTimelineStage(input: { rawContent: string; compactProject: string }) {
+export function acceptTimelineStage(input: { rawContent: string; compactProject: string; userRequest?: string; selectedElementId?: string | null; suggestedElementId?: string | null; requireComponentEdit?: boolean }) {
   const current = parseCompactProject(input.compactProject);
   const result = parseFirstStageResponse(input.rawContent);
   if (result.expectedRevision !== current.revision) throw new Error(`expectedRevision must be ${current.revision}.`);
+  if (input.requireComponentEdit && result.type !== "request-component") {
+    const validTargets = current.tracks.flatMap((track) => (track.elements as Array<Record<string, unknown>>).flatMap((element) =>
+      typeof element.componentId === "string"
+        ? [`elementId="${String(element.id)}" componentId="${element.componentId}" componentVersion={${String(element.componentVersion)}}`]
+        : [],
+    ));
+    throw new Error(`This request changes animation/rendering code and requires RequestComponent, not ${result.type === "timeline-edit" ? "TimelineEdit" : "NoChanges"}. Use one exact target tuple: ${validTargets.join(" OR ") || "use matching new: IDs for a newly requested component"}.`);
+  }
   if (result.type === "timeline-edit") validateTimeline(result, current);
-  if (result.type === "request-component") validateComponentRequest(result, current);
+  if (result.type === "request-component") validateComponentRequest(result, current, input.userRequest ?? "", input.selectedElementId ?? input.suggestedElementId ?? null);
   return result;
 }
 
@@ -103,15 +119,25 @@ function validateTimeline(result: Extract<FirstStageResult, { type: "timeline-ed
   }
 }
 
-function validateComponentRequest(result: Extract<FirstStageResult, { type: "request-component" }>, current: ReturnType<typeof parseCompactProject>) {
+function validateComponentRequest(result: Extract<FirstStageResult, { type: "request-component" }>, current: ReturnType<typeof parseCompactProject>, userRequest: string, preferredElementId: string | null) {
   const isNew = result.componentId.startsWith("new:") && result.elementId.startsWith("new:");
+  const explicitSeparateCreation = /\b(?:add|create|generate|duplicate)\s+(?:a|an|another|new|second|additional)\b|\b(?:new|another|second|additional)\s+(?:title|component|overlay|animation|element)\b/i.test(userRequest);
+  const preferred = preferredElementId
+    ? current.tracks.flatMap((track) => track.elements as Array<Record<string, unknown>>).find((element) => element.id === preferredElementId && typeof element.componentId === "string")
+    : undefined;
+  if (preferred && !explicitSeparateCreation && (result.elementId !== preferred.id || result.componentId !== preferred.componentId || result.componentVersion !== preferred.componentVersion)) {
+    throw new Error(`Modify the existing target instead of creating a duplicate: use elementId="${String(preferred.id)}", componentId="${String(preferred.componentId)}", componentVersion={${String(preferred.componentVersion)}}.`);
+  }
   if (isNew) {
     if (!result.trackId || typeof result.start !== "number" || typeof result.duration !== "number" || result.duration <= 0) throw new Error("A new component request requires trackId, start, and positive duration.");
     if (!current.tracks.some((track) => track.id === result.trackId && track.type === "media")) throw new Error("A new component must target an existing visual track.");
     return;
   }
   const found = current.tracks.flatMap((track) => track.elements as Array<Record<string, unknown>>).find((element) => element.id === result.elementId);
-  if (!found || found.componentId !== result.componentId || found.componentVersion !== result.componentVersion) throw new Error("RequestComponent must target the exact current component element ID and version or use matching new: IDs.");
+  if (!found) throw new Error(`Unknown component element "${result.elementId}". Use an exact elementId from the compact timeline or matching new: IDs.`);
+  if (found.componentId !== result.componentId || found.componentVersion !== result.componentVersion) {
+    throw new Error(`Identifier mismatch. For elementId="${result.elementId}", use componentId="${String(found.componentId)}" componentVersion={${String(found.componentVersion)}}.`);
+  }
 }
 
 export function buildComponentSystemPrompt(input: {

@@ -159,7 +159,12 @@ export function parseCompactProject(source: string) {
       background: stringValue(expression.openingElement, "background"),
     },
     assets: children(assetsRoot, "Asset").map((asset) => ({ id: stringValue(asset.openingElement, "id"), kind: stringValue(asset.openingElement, "kind") })),
-    components: children(componentsRoot, "ComponentSummary").map((component) => ({ id: stringValue(component.openingElement, "id"), version: numberValue(component.openingElement, "version") })),
+    components: children(componentsRoot, "ComponentSummary").map((component) => ({
+      id: stringValue(component.openingElement, "id"),
+      version: numberValue(component.openingElement, "version"),
+      name: stringValue(component.openingElement, "name", "Component"),
+      description: stringValue(component.openingElement, "description", ""),
+    })),
     tracks: parseTracks(timeline),
   };
 }
