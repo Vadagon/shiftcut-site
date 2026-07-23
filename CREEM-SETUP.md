@@ -13,7 +13,7 @@ Copy `.env.example` → `.env.local` and fill in:
 | `CREEM_MODE` | — | `test` while under review, `live` after approval |
 | `CREEM_API_KEY` | Creem → Developers → API Keys | Sent as `x-api-key` |
 | `CREEM_WEBHOOK_SECRET` | Creem → Developers → Webhooks | Verifies `creem-signature` (HMAC-SHA256) |
-| `CREEM_PRODUCT_ID_MONTHLY` | Product you create for $10/mo | 3-day free trial enabled on the product |
+| `CREEM_PRODUCT_ID_MONTHLY` | Product you create for $10/mo | no trial |
 | `CREEM_PRODUCT_ID_YEARLY` | Product you create for $60/yr | |
 | `CREEM_MODERATION_ENABLED` | — | `true` to enforce moderation (required for AI products) |
 | `CREEM_MODERATION_API_KEY` | Creem moderation | Optional; defaults to `CREEM_API_KEY` |
@@ -31,8 +31,8 @@ back into `.env.local` automatically. If Creem's API rejects the trial field, th
 product is created without it — flip the **3-day trial** toggle on that product in the dashboard.
 
 **Option B — by hand** (Products → New):
-- **AI Copilot — Monthly**: recurring, **$10 / month**, **3-day free trial**.
-- **AI Copilot — Yearly**: recurring, **$60 / year**.
+- **AI Copilot — Monthly**: recurring, **$10 / month** (no trial).
+- **AI Copilot — Yearly**: recurring, **$60 / year**, **3-day free trial**.
 
 Paste each product id into the matching env var.
 

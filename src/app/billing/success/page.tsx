@@ -20,7 +20,7 @@ export default function BillingSuccessPage() {
           </div>
           <h1 className="mt-6 text-3xl font-semibold tracking-tight">You&rsquo;re all set</h1>
           <p className="mx-auto mt-4 max-w-md text-pretty leading-relaxed text-fg-muted">
-            Your AI Copilot trial has started. Open the editor and just type what you want — the
+            Your AI Copilot is active. Open the editor and just type what you want — the
             copilot will do the editing. You can manage or cancel your subscription anytime from the
             billing portal.
           </p>

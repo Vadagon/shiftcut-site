@@ -6,8 +6,8 @@
 //   CREEM_API_KEY            — secret API key (x-api-key header)
 //   CREEM_MODE               — "test" | "live" (defaults to "test")
 //   CREEM_WEBHOOK_SECRET     — HMAC-SHA256 secret for webhook verification
-//   CREEM_PRODUCT_ID_MONTHLY — product id for the $10/mo AI Copilot (3-day trial)
-//   CREEM_PRODUCT_ID_YEARLY  — product id for the $60/yr AI Copilot
+//   CREEM_PRODUCT_ID_MONTHLY — product id for the $10/mo AI Copilot (no trial)
+//   CREEM_PRODUCT_ID_YEARLY  — product id for the $60/yr AI Copilot (3-day trial)
 //
 // Nothing here throws at import time — the site renders fine before keys exist.
 

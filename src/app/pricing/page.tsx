@@ -9,7 +9,7 @@ import { plans, site } from "@/lib/site";
 export const metadata: Metadata = {
   title: "Pricing",
   description:
-    "ShiftCut is free forever with your own agent (Codex, Claude, Gemini). The built-in AI copilot is $10/mo with a 3-day free trial, or $60/yr. Billed securely via Creem.",
+    "ShiftCut is free forever with your own agent (Codex, Claude, Gemini). The built-in AI copilot is $10/mo, or $60/yr with a 3-day free trial. Billed securely via Creem.",
 };
 
 export default function PricingPage() {
@@ -25,8 +25,8 @@ export default function PricingPage() {
             </h1>
             <p className="mx-auto mt-4 max-w-2xl text-pretty text-lg leading-relaxed text-fg-muted">
               The editor, local MP4 export, and MCP access are free forever — bring Codex,
-              Claude Code, or Gemini and pay nothing. Only the in-editor AI copilot is paid,
-              and it starts with a 3-day free trial.
+              Claude Code, or Gemini and pay nothing. Only the in-editor AI copilot is paid.
+              Go yearly to start with a 3-day free trial.
             </p>
           </div>
         </section>
@@ -97,7 +97,7 @@ export default function PricingPage() {
               {[
                 {
                   q: "How does the 3-day free trial work?",
-                  a: "Start the AI Copilot and use it free for 3 days. You can cancel anytime during the trial from the billing portal and you won't be charged. After the trial, the plan renews at $10/month (or $60/year) until you cancel.",
+                  a: "The 3-day free trial is included with the yearly plan. Start it and use the AI Copilot free for 3 days — cancel anytime during the trial from the billing portal and you won't be charged. After the trial, it renews at $60/year until you cancel. The monthly plan has no trial and bills right away.",
                 },
                 {
                   q: "How do I cancel?",

@@ -19,8 +19,9 @@ export default function RefundPage() {
 
       <Section heading="Free trial">
         <p>
-          Every AI Copilot subscription starts with a <strong>3-day free trial</strong>. If you cancel
-          before the trial ends, you will not be charged.
+          The <strong>yearly</strong> AI Copilot plan starts with a <strong>3-day free trial</strong>.
+          If you cancel before the trial ends, you will not be charged. The monthly plan has no trial
+          and is billed immediately.
         </p>
       </Section>
 

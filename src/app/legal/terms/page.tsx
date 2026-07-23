@@ -39,11 +39,12 @@ export default function TermsPage() {
 
       <Section heading="3. Subscriptions, trials, and billing">
         <p>
-          The AI Copilot is offered at <strong>$10 per month</strong> or <strong>$60 per year</strong>,
-          and includes a <strong>3-day free trial</strong>. Payments are processed by our merchant of
-          record, <strong>Creem</strong>. By starting a subscription you authorize Creem to charge your
-          payment method on a recurring basis until you cancel. Unless you cancel during the trial, the
-          subscription begins and renews automatically at the end of each billing period.
+          The AI Copilot is offered at <strong>$10 per month</strong> or <strong>$60 per year</strong>.
+          The yearly plan includes a <strong>3-day free trial</strong>; the monthly plan bills
+          immediately. Payments are processed by our merchant of record, <strong>Creem</strong>. By
+          starting a subscription you authorize Creem to charge your payment method on a recurring basis
+          until you cancel. Unless you cancel during the trial (yearly plan), the subscription begins and
+          renews automatically at the end of each billing period.
         </p>
         <p>
           You may cancel at any time via the billing portal or by contacting us. Cancellation stops
