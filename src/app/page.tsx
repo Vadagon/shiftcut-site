@@ -283,7 +283,7 @@ export default function Home() {
         {/* ── Pricing teaser ──────────────────────────────────── */}
         <SectionShell
           eyebrow="Pricing"
-          title="Free with your own agent. $10/mo for the built-in copilot."
+          title="From $5/month — to replace a $1k+ expert editor."
           lead="The editor, local export, and MCP access are free forever. Only the in-editor AI copilot is paid."
         >
           <div className="grid gap-4 sm:grid-cols-3">

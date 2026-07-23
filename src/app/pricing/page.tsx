@@ -21,7 +21,7 @@ export default function PricingPage() {
           <div className="mx-auto max-w-6xl px-5 py-16 text-center sm:px-8">
             <h1 className="text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
               Free with your own agent. <br className="hidden sm:block" />
-              <span className="text-gradient-accent">$10/mo for the built-in copilot.</span>
+              <span className="text-gradient-accent">From $5/month — to replace a $1k+ expert editor.</span>
             </h1>
             <p className="mx-auto mt-4 max-w-2xl text-pretty text-lg leading-relaxed text-fg-muted">
               The editor, local MP4 export, and MCP access are free forever — bring Codex,
