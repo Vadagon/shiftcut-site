@@ -20,6 +20,17 @@ Copy `.env.example` → `.env.local` and fill in:
 
 ## 2. Create the products in Creem
 
+**Option A — one command (recommended).** With `CREEM_API_KEY` set in `.env.local`, run:
+
+```
+npm run creem:setup
+```
+
+This creates both products and writes `CREEM_PRODUCT_ID_MONTHLY` / `CREEM_PRODUCT_ID_YEARLY`
+back into `.env.local` automatically. If Creem's API rejects the trial field, the monthly
+product is created without it — flip the **3-day trial** toggle on that product in the dashboard.
+
+**Option B — by hand** (Products → New):
 - **AI Copilot — Monthly**: recurring, **$10 / month**, **3-day free trial**.
 - **AI Copilot — Yearly**: recurring, **$60 / year**.
 
