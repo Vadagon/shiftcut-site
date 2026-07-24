@@ -4,7 +4,7 @@ import { DocHeader, H2, P, Code, Callout, NextCard } from "@/components/docs/doc
 export const metadata: Metadata = {
   title: "Core concepts",
   description:
-    "How ShiftCut works under the hood: HTML compositions, clips and tracks, the paused timeline, understanding, and the local render.",
+    "How UltraCut works under the hood: HTML compositions, clips and tracks, the paused timeline, understanding, and the local render.",
 };
 
 export default function Concepts() {
@@ -18,7 +18,7 @@ export default function Concepts() {
 
       <H2>Compositions are HTML</H2>
       <P>
-        A ShiftCut project is a small web project. The edit lives in an{" "}
+        A UltraCut project is a small web project. The edit lives in an{" "}
         <code>index.html</code> your agent reads and writes — clips, captions,
         titles, and motion are plain HTML, CSS, and JS. That&apos;s why an agent
         is so good at it: editing video becomes editing markup it fully
@@ -44,13 +44,13 @@ export default function Concepts() {
       <P>
         Motion is a single GSAP timeline built <code>{`{ paused: true }`}</code>{" "}
         and registered on <code>window.__timelines</code>. Because it&apos;s
-        paused and seek-safe, ShiftCut can jump to any frame and render it
+        paused and seek-safe, UltraCut can jump to any frame and render it
         precisely — no guesswork, no drift.
       </P>
 
       <H2>Understanding your footage</H2>
       <P>
-        Before it edits, ShiftCut reads the video. Transcripts, scene
+        Before it edits, UltraCut reads the video. Transcripts, scene
         boundaries, faces, and silences are analyzed <strong>locally</strong>{" "}
         (Whisper.cpp, OpenCV) so the agent can place cuts and captions against
         what&apos;s actually in the footage — not guesses.
@@ -64,7 +64,7 @@ export default function Concepts() {
         creative step; the render of a given composition is always reproducible.)
       </Callout>
 
-      <NextCard href="/docs/agents/claude-code" label="Using ShiftCut with Claude Code" />
+      <NextCard href="/docs/agents/claude-code" label="Using UltraCut with Claude Code" />
     </>
   );
 }

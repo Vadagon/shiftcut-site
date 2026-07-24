@@ -4,7 +4,7 @@ import { site } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Refund & Cancellation Policy",
-  description: "How to cancel your ShiftCut AI Copilot subscription and request a refund.",
+  description: "How to cancel your UltraCut AI Copilot subscription and request a refund.",
 };
 
 const UPDATED = "July 23, 2026";
@@ -13,7 +13,7 @@ export default function RefundPage() {
   return (
     <LegalPage title="Refund & Cancellation Policy" updated={UPDATED}>
       <p>
-        This policy applies to the paid <strong>ShiftCut AI Copilot</strong> subscription. The free
+        This policy applies to the paid <strong>UltraCut AI Copilot</strong> subscription. The free
         editor requires no payment and is not covered here.
       </p>
 

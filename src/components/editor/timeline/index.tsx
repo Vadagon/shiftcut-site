@@ -2,7 +2,7 @@
 
 // Timeline orchestrator. Interaction model adapted from OpenCut (MIT, /NOTICE):
 // transient dragState drives live rendering; mutations commit ONCE on release
-// (each commit bumps the ShiftCut revision + pushes an undo snapshot).
+// (each commit bumps the UltraCut revision + pushes an undo snapshot).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTimelineStore } from "@/stores/timeline-store";

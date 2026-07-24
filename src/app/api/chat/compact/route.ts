@@ -15,7 +15,7 @@ function validMessages(value: unknown): value is ChatMessage[] {
 
 export async function POST(request: Request) {
   if (!(await requestHasActiveSubscription(request))) {
-    return NextResponse.json({ error: "An active ShiftCut AI subscription is required." }, { status: 402 });
+    return NextResponse.json({ error: "An active UltraCut AI subscription is required." }, { status: 402 });
   }
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) return NextResponse.json({ error: "OpenRouter is not configured." }, { status: 503 });
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
     try {
       response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
         method: "POST", signal: controller.signal,
-        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "HTTP-Referer": request.headers.get("origin") ?? "http://localhost:3000", "X-Title": "ShiftCut" },
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json", "HTTP-Referer": request.headers.get("origin") ?? "http://localhost:3000", "X-Title": "UltraCut" },
         body: JSON.stringify({ model: process.env.OPENROUTER_MODEL ?? "deepseek/deepseek-v4-flash", messages: [{ role: "system", content: "You summarize internal assistant memory. Follow the requested JSON response format exactly." }, { role: "user", content: prompt }], temperature: 0.1 }),
       });
     } catch {

@@ -4,7 +4,7 @@ import { DocHeader, H2, P, Callout, ComingSoon, NextCard } from "@/components/do
 export const metadata: Metadata = {
   title: "Browser Studio",
   description:
-    "Browser Studio is ShiftCut's visual timeline — it feels like CapCut, and every manual edit is the same operation your agent runs.",
+    "Browser Studio is UltraCut's visual timeline — it feels like CapCut, and every manual edit is the same operation your agent runs.",
 };
 
 export default function Studio() {
@@ -19,8 +19,8 @@ export default function Studio() {
       <ComingSoon />
 
       <P>
-        Today ShiftCut ships a <strong>live browser preview</strong> — run{" "}
-        <code>shiftcut preview</code> to watch a composition update as your agent
+        Today UltraCut ships a <strong>live browser preview</strong> — run{" "}
+        <code>ultracut preview</code> to watch a composition update as your agent
         edits it. The full CapCut-style visual timeline below is on the roadmap.
       </P>
 
@@ -28,7 +28,7 @@ export default function Studio() {
       <P>
         Agents handle the heavy lifting, but sometimes you want to drag a clip,
         retime a caption, or preview a cut yourself. Browser Studio will give you
-        that timeline without leaving the ShiftCut model.
+        that timeline without leaving the UltraCut model.
       </P>
 
       <Callout title="One model, two hands">

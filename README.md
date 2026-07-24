@@ -1,7 +1,7 @@
-# ShiftCut — marketing & docs site
+# UltraCut — marketing & docs site
 
-The website for **ShiftCut**, the AI-native, agent-first programmable video editor.
-_Open any video, tell your coding agent what you want, and ShiftCut does the editing._
+The website for **UltraCut**, the AI-native, agent-first programmable video editor.
+_Open any video, tell your coding agent what you want, and UltraCut does the editing._
 
 Built with **Next.js 16 (App Router)**, **React 19**, **Tailwind CSS v4**, and deployable to **Vercel**.
 
@@ -14,7 +14,7 @@ revoked. Local development uses an in-memory relay. Vercel deployments require `
 `UPSTASH_REDIS_REST_TOKEN` so pairing sessions and tool calls survive across
 serverless requests.
 
-> This repo is the **website only**. The ShiftCut editing engine/framework is a
+> This repo is the **website only**. The UltraCut editing engine/framework is a
 > separate, upcoming project. Copy here describes intended capabilities.
 
 ## Develop

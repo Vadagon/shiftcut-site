@@ -10,7 +10,7 @@ import {
 export const metadata: Metadata = {
   title: "Introduction",
   description:
-    "ShiftCut lets your AI edit your videos. Open any video, tell your coding agent what you want, and it does the editing on your machine.",
+    "UltraCut lets your AI edit your videos. Open any video, tell your coding agent what you want, and it does the editing on your machine.",
 };
 
 export default function DocsIntro() {
@@ -19,12 +19,12 @@ export default function DocsIntro() {
       <DocHeader
         eyebrow="Getting started"
         title="Introduction"
-        intro="ShiftCut lets your AI edit your videos. Open any video, tell your coding agent what you want, and it does the editing — right on your machine."
+        intro="UltraCut lets your AI edit your videos. Open any video, tell your coding agent what you want, and it does the editing — right on your machine."
       />
 
       <P>
         With a traditional editor, <strong>you</strong> do the editing — the
-        cutting, the captioning, the exporting. With ShiftCut, you just{" "}
+        cutting, the captioning, the exporting. With UltraCut, you just{" "}
         <strong>describe what you want</strong> and your agent does it for you.
         Think of it as CapCut on autopilot.
       </P>
@@ -33,7 +33,7 @@ export default function DocsIntro() {
         Point <a href="/docs/agents/claude-code">Claude Code</a>, Cursor, Codex,
         or Gemini CLI at a video and ask in plain language: &quot;cut this into
         five shorts,&quot; &quot;add captions,&quot; &quot;make it
-        vertical.&quot; ShiftCut watches the footage, makes the edits, and hands
+        vertical.&quot; UltraCut watches the footage, makes the edits, and hands
         you finished files.
       </P>
 
@@ -44,7 +44,7 @@ export default function DocsIntro() {
 
       <H2>What you can do</H2>
       <P>
-        ShiftCut is built for making footage you already have better — the same
+        UltraCut is built for making footage you already have better — the same
         things you&apos;d open CapCut for, just spoken instead of clicked:
       </P>
       <ul className="my-4 space-y-2 text-fg-muted">
@@ -63,7 +63,7 @@ export default function DocsIntro() {
       </ul>
 
       <P>
-        Need something from scratch? ShiftCut <strong>can</strong> also build
+        Need something from scratch? UltraCut <strong>can</strong> also build
         intros, motion graphics, and explainers on request. But making real
         footage better is what it does first and best.
       </P>

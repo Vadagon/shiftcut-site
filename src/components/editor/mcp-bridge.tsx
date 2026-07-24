@@ -181,10 +181,10 @@ function scheduleBridgeRequest(request: BridgeRequest) {
 
 async function handleBridgeRequest(request: BridgeRequest) {
   const projectBeforeHydration = useProjectStore.getState().activeProject;
-  if (!projectBeforeHydration) throw new Error("No ShiftCut project is open.");
+  if (!projectBeforeHydration) throw new Error("No UltraCut project is open.");
   const hydrated = await hydrateProjectContext(projectBeforeHydration.id, useTimelineStore.getState().tracks);
   const project = useProjectStore.getState().activeProject;
-  if (!project || project.id !== projectBeforeHydration.id) throw new Error("The open ShiftCut project changed while preparing the MCP command.");
+  if (!project || project.id !== projectBeforeHydration.id) throw new Error("The open UltraCut project changed while preparing the MCP command.");
   const timeline = useTimelineStore.getState();
   const media = useMediaStore.getState();
   const components = hydrated.components;

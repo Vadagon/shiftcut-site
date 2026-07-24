@@ -105,7 +105,7 @@ export default function Home() {
             <div className="animate-rise mt-14">
               <MediaPlaceholder
                 label="Demo project — one prompt, five ready-to-post shorts"
-                note="Hero demo video or screen recording: a real edit happening in ShiftCut — a prompt going in, the timeline building itself, and finished clips coming out. This is the single most important asset on the page."
+                note="Hero demo video or screen recording: a real edit happening in UltraCut — a prompt going in, the timeline building itself, and finished clips coming out. This is the single most important asset on the page."
                 aspect="16 / 9"
               />
             </div>
@@ -208,7 +208,7 @@ export default function Home() {
         <SectionShell
           eyebrow="Get it in seconds"
           title="Pick your tool. Copy one line."
-          lead="ShiftCut installs as a skill for the coding agent you already have. One command and you're editing."
+          lead="UltraCut installs as a skill for the coding agent you already have. One command and you're editing."
         >
           <InstallPicker />
         </SectionShell>
@@ -236,9 +236,9 @@ export default function Home() {
 
         {/* ── The wedge: why not a cloud editor ───────────────── */}
         <SectionShell
-          eyebrow="Why ShiftCut"
+          eyebrow="Why UltraCut"
           title="Everything a cloud editor does — without the cloud, the credits, or the lock-in."
-          lead="Other AI editors upload your footage and charge by the generation. ShiftCut runs on your machine and stays free with your own agent."
+          lead="Other AI editors upload your footage and charge by the generation. UltraCut runs on your machine and stays free with your own agent."
         >
           <div className="grid gap-4 sm:grid-cols-2">
             {comparison.map((c) => (
@@ -318,7 +318,7 @@ export default function Home() {
               <span className="text-gradient">Point your AI at a video.</span>
             </h2>
             <p className="mx-auto mt-4 max-w-xl text-pretty text-lg text-fg-muted">
-              Tell it what you want. Get it back edited. That&apos;s ShiftCut.
+              Tell it what you want. Get it back edited. That&apos;s UltraCut.
             </p>
             <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
               <Link

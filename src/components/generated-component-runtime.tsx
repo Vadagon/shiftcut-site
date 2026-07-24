@@ -27,7 +27,7 @@ function compileGeneratedComponent(code: string) {
   const cached = componentCache.get(code);
   if (cached) return cached;
   // Source is accepted only after validateGeneratedComponent() enforces the
-  // deterministic ShiftCut contract. The same compiled function is used by
+  // deterministic UltraCut contract. The same compiled function is used by
   // preview and Remotion export, so localTime produces frame-identical output.
   const factory = new Function("React", `"use strict";\n${code}\nreturn GeneratedComponent;`) as (react: typeof React) => unknown;
   const candidate = factory(React);

@@ -1,15 +1,15 @@
-// Central content + navigation config for the ShiftCut marketing site.
+// Central content + navigation config for the UltraCut marketing site.
 // One promise, everywhere: open a video, tell your AI what you want, get it
 // back edited. Sell the magic — no competitor benchmarks, no engine jargon.
 
 export const site = {
-  name: "ShiftCut",
+  name: "UltraCut",
   tagline: "CapCut on autopilot",
-  domain: "shiftcut.verblike.com",
-  github: "https://github.com/Vadagon/shiftcut",
+  domain: "ultracut.verblike.com",
+  github: "https://github.com/Vadagon/ultracut",
   company: "Vladyslav Verbytskyi",
   companyUrl: "https://verblike.com",
-  contact: "shiftcut@verblike.com",
+  contact: "ultracut@verblike.com",
   description:
     "The video editor your AI drives. Open any video, tell Claude Code, Cursor, or Codex what you want, and it does the editing — right on your machine.",
 } as const;
@@ -103,7 +103,7 @@ export const agents = [
 
 // Install — one command adds the skill; the "then" step differs per tool.
 // Claude Code is the default and primary target.
-export const installCommand = "npx skills add Vadagon/shiftcut";
+export const installCommand = "npx skills add Vadagon/ultracut";
 
 export const installTargets = [
   {
@@ -144,7 +144,7 @@ export const examplePrompts = [
 export const steps = [
   {
     title: "Open any video",
-    body: "Point ShiftCut at a clip you already have — an interview, a screen recording, a livestream, a rough cut.",
+    body: "Point UltraCut at a clip you already have — an interview, a screen recording, a livestream, a rough cut.",
   },
   {
     title: "Tell your AI what you want",
@@ -152,7 +152,7 @@ export const steps = [
   },
   {
     title: "Get it back, edited",
-    body: "ShiftCut does the work on your machine and hands you finished files, ready to post.",
+    body: "UltraCut does the work on your machine and hands you finished files, ready to post.",
   },
 ] as const;
 
@@ -270,7 +270,7 @@ export const comparison = [
 // Home-page FAQ — mirrors the questions a creator comparing tools asks.
 export const homeFaqs = [
   {
-    q: "What is ShiftCut?",
+    q: "What is UltraCut?",
     a: "An AI-native video editor you drive by talking to your coding agent. Open a video, describe the edit in plain words, and it does the work — locally, on your machine.",
   },
   {
@@ -279,7 +279,7 @@ export const homeFaqs = [
   },
   {
     q: "Does my footage get uploaded?",
-    a: "No. ShiftCut runs 100% locally — your files stay on your device. That's the core difference from cloud editors.",
+    a: "No. UltraCut runs 100% locally — your files stay on your device. That's the core difference from cloud editors.",
   },
   {
     q: "Which agents does it work with?",
@@ -287,7 +287,7 @@ export const homeFaqs = [
   },
   {
     q: "Do I need to know video editing?",
-    a: "No timelines, no keyframes. If you can describe what you want — “add captions,” “make it vertical,” “cut the boring parts” — ShiftCut handles the rest.",
+    a: "No timelines, no keyframes. If you can describe what you want — “add captions,” “make it vertical,” “cut the boring parts” — UltraCut handles the rest.",
   },
   {
     q: "Can I still edit by hand?",
@@ -303,11 +303,11 @@ export const featureSections = [
     id: "expert",
     eyebrow: "Edit like a pro",
     title: "It edits like an expert editor",
-    body: "ShiftCut watches your footage, finds the strongest moments, cuts the dead air and repeated takes, and lays in B-roll where it belongs — the judgment calls an editor makes, on autopilot.",
+    body: "UltraCut watches your footage, finds the strongest moments, cuts the dead air and repeated takes, and lays in B-roll where it belongs — the judgment calls an editor makes, on autopilot.",
     prompt: "Turn this 20-minute interview into a tight 3-minute cut of the best moments.",
     media: {
       label: "Before / after edit",
-      note: "Split-frame or screen recording: the raw timeline on the left, ShiftCut's finished cut on the right, with the AI-selected “best moment” segments highlighted.",
+      note: "Split-frame or screen recording: the raw timeline on the left, UltraCut's finished cut on the right, with the AI-selected “best moment” segments highlighted.",
       aspect: "16 / 9",
     },
   },

@@ -11,7 +11,7 @@ import {
 export const metadata: Metadata = {
   title: "Installation",
   description:
-    "Install ShiftCut as a skill for your coding agent and set up its local tools — FFmpeg, Whisper.cpp, Chromium, and OpenCV.",
+    "Install UltraCut as a skill for your coding agent and set up its local tools — FFmpeg, Whisper.cpp, Chromium, and OpenCV.",
 };
 
 export default function Installation() {
@@ -20,7 +20,7 @@ export default function Installation() {
       <DocHeader
         eyebrow="Getting started"
         title="Installation"
-        intro="ShiftCut runs entirely on your machine. Install the skill for your agent, make sure FFmpeg is present, and you're ready."
+        intro="UltraCut runs entirely on your machine. Install the skill for your agent, make sure FFmpeg is present, and you're ready."
       />
 
       <H2>Requirements</H2>
@@ -33,13 +33,13 @@ export default function Installation() {
 
       <H2>Add the skill</H2>
       <P>
-        ShiftCut installs as a skill for your coding agent. One command works
+        UltraCut installs as a skill for your coding agent. One command works
         across every supported tool:
       </P>
-      <Code>{`$ npx skills add Vadagon/shiftcut`}</Code>
+      <Code>{`$ npx skills add Vadagon/ultracut`}</Code>
       <P>
         Restart your agent so it loads the skill. In Claude Code, start a
-        message with <code>/shiftcut</code>. See the{" "}
+        message with <code>/ultracut</code>. See the{" "}
         <a href="/docs/agents/claude-code">agent guides</a> for the per-tool
         step.
       </P>
@@ -55,13 +55,13 @@ $ sudo apt install ffmpeg
 $ winget install Gyan.FFmpeg`}</Code>
 
       <Callout title="Verify your setup">
-        Run <code>shiftcut doctor</code> to check versions and confirm FFmpeg,
+        Run <code>ultracut doctor</code> to check versions and confirm FFmpeg,
         Whisper.cpp, and Chromium are reachable before your first edit.
       </Callout>
 
       <H2>Offline &amp; CI</H2>
       <P>
-        Because everything is local, ShiftCut runs fully offline and in CI.
+        Because everything is local, UltraCut runs fully offline and in CI.
         Cache the tools once and every render is reproducible across runners.
       </P>
 

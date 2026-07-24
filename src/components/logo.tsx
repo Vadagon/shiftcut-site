@@ -45,7 +45,7 @@ export function Logo({ className = "" }: { className?: string }) {
     >
       <Mark className="h-6 w-6 transition-transform group-hover:-translate-y-[1px]" />
       <span className="text-[15px] font-semibold tracking-tight text-fg">
-        ShiftCut
+        UltraCut
       </span>
     </Link>
   );

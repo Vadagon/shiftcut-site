@@ -134,7 +134,7 @@ function CodeAccordion({ element, artifact }: { element: TimelineElement; artifa
     propsSchema: artifact?.propsSchema,
   }, null, 2);
   const gptReference = [
-    "# ShiftCut component reference",
+    "# UltraCut component reference",
     `Canvas: ${project?.settings.width ?? "unknown"} × ${project?.settings.height ?? "unknown"} px at ${project?.settings.fps ?? "unknown"} fps`,
     "Coordinate system: x, y, and fontSize are canonical output pixels; scale is unitless.",
     `Timeline element: ${element.name}`,

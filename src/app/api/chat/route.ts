@@ -26,7 +26,7 @@ function validMessages(value: unknown): value is ProxyMessage[] {
 
 export async function POST(request: Request) {
   if (!(await requestHasActiveSubscription(request))) {
-    return NextResponse.json({ error: "An active ShiftCut AI subscription is required." }, { status: 402 });
+    return NextResponse.json({ error: "An active UltraCut AI subscription is required." }, { status: 402 });
   }
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) return NextResponse.json({ error: "OpenRouter is not configured." }, { status: 503 });
@@ -38,12 +38,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
   }
   if (!validMessages(body.messages)) return NextResponse.json({ error: "A valid bounded model conversation is required." }, { status: 400 });
-  const isPlannerPrompt = body.messages[0].content.startsWith("You are ShiftCut's editor planner")
+  const isPlannerPrompt = body.messages[0].content.startsWith("You are UltraCut's editor planner")
     && body.messages[0].content.includes("<ShiftCutProject");
-  const isComponentPrompt = body.messages[0].content.startsWith("You are editing one ShiftCut React visual")
+  const isComponentPrompt = body.messages[0].content.startsWith("You are editing one UltraCut React visual")
     && body.messages[0].content.includes("\"type\": \"component_result\"");
   if (!isPlannerPrompt && !isComponentPrompt) {
-    return NextResponse.json({ error: "Only ShiftCut composition requests are allowed." }, { status: 400 });
+    return NextResponse.json({ error: "Only UltraCut composition requests are allowed." }, { status: 400 });
   }
 
   // Creem requires all prompt-driven generation to be screened through the
@@ -64,7 +64,7 @@ export async function POST(request: Request) {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
         "HTTP-Referer": request.headers.get("origin") ?? "http://localhost:3000",
-        "X-Title": "ShiftCut",
+        "X-Title": "UltraCut",
         "X-OpenRouter-Metadata": "enabled",
       },
       body: JSON.stringify({

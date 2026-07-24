@@ -26,7 +26,7 @@ const TOOL_METHODS: Record<string, string> = {
 };
 
 const TOOLS = [
-  tool("get_status", "Check the open ShiftCut project connection.", {}),
+  tool("get_status", "Check the open UltraCut project connection.", {}),
   tool("get_revision", "Read the current revision before planning an edit.", {}),
   tool("get_project", "Read the project, timeline, components, and asset metadata.", {}),
   tool("list_assets", "List project or global assets.", { scope: { type: "string", enum: ["project", "global"], default: "project" } }),
@@ -55,9 +55,9 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const token = new URL(request.url).searchParams.get("token");
-  if (!token || !/^[A-Za-z0-9_-]{32,128}$/.test(token)) return rpcError(null, -32001, "Invalid or missing ShiftCut pairing token.", 401);
+  if (!token || !/^[A-Za-z0-9_-]{32,128}$/.test(token)) return rpcError(null, -32001, "Invalid or missing UltraCut pairing token.", 401);
   const session = await readMcpSession(token);
-  if (!session) return rpcError(null, -32001, "This ShiftCut pairing link has expired.", 401);
+  if (!session) return rpcError(null, -32001, "This UltraCut pairing link has expired.", 401);
 
   let message: JsonRpcRequest;
   try {
@@ -84,11 +84,11 @@ export async function POST(request: Request) {
   if (message.method === "ping") return rpcResult(message.id, {});
   if (message.method === "tools/list") return rpcResult(message.id, { tools: TOOLS });
   if (message.method !== "tools/call") return rpcError(message.id ?? null, -32601, "Method not found.");
-  if (!session.approved) return rpcError(message.id ?? null, -32002, "Approve this agent in the open ShiftCut editor before using project tools.");
+  if (!session.approved) return rpcError(message.id ?? null, -32002, "Approve this agent in the open UltraCut editor before using project tools.");
 
   const name = message.params?.name;
   const bridgeMethod = typeof name === "string" ? TOOL_METHODS[name] : undefined;
-  if (!bridgeMethod) return rpcError(message.id ?? null, -32602, "Unknown ShiftCut tool.");
+  if (!bridgeMethod) return rpcError(message.id ?? null, -32602, "Unknown UltraCut tool.");
   const commandId = crypto.randomUUID();
   await enqueueMcpCommand(token, {
     id: commandId,
@@ -98,7 +98,7 @@ export async function POST(request: Request) {
       : {},
   });
   const result = await waitForResult(token, commandId, request.signal);
-  if (!result) return rpcError(message.id ?? null, -32003, "The ShiftCut editor did not answer before the command timed out.");
+  if (!result) return rpcError(message.id ?? null, -32003, "The UltraCut editor did not answer before the command timed out.");
   if (result.error) return rpcResult(message.id, { content: [{ type: "text", text: result.error }], isError: true });
   return rpcResult(message.id, { content: [{ type: "text", text: JSON.stringify(result.result, null, 2) }] });
 }

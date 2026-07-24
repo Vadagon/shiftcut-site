@@ -4,7 +4,7 @@ import { DocHeader, H2, P, Code, Callout, ComingSoon, NextCard } from "@/compone
 export const metadata: Metadata = {
   title: "API",
   description:
-    "A planned library to embed ShiftCut's local editing power into your own product, server, or pipeline.",
+    "A planned library to embed UltraCut's local editing power into your own product, server, or pipeline.",
 };
 
 export default function Api() {
@@ -19,7 +19,7 @@ export default function Api() {
       <ComingSoon />
 
       <P>
-        An embeddable library is on the roadmap. Today, drive ShiftCut through
+        An embeddable library is on the roadmap. Today, drive UltraCut through
         your <a href="/docs/agents/claude-code">agent</a> or the{" "}
         <a href="/docs/cli">CLI</a>. The shape it&apos;s heading toward:
       </P>
@@ -29,9 +29,9 @@ export default function Api() {
         Build and render projects in code — anything an agent can do, your app
         will be able to do:
       </P>
-      <Code>{`import { ShiftCut } from "shiftcut";
+      <Code>{`import { UltraCut } from "ultracut";
 
-const project = ShiftCut.open("media/interview.mp4");
+const project = UltraCut.open("media/interview.mp4");
 
 await project
   .removeSilences()

@@ -4,15 +4,15 @@ import { DocHeader, H2, P, Code, Callout, NextCard } from "@/components/docs/doc
 export const metadata: Metadata = {
   title: "CLI",
   description:
-    "The ShiftCut CLI — scaffold, preview, and render projects locally, and drop the same edits into scripts and CI.",
+    "The UltraCut CLI — scaffold, preview, and render projects locally, and drop the same edits into scripts and CI.",
 };
 
 const commands = [
-  ["shiftcut init <dir>", "Scaffold a new project"],
-  ["shiftcut preview", "Live browser preview with hot reload"],
-  ["shiftcut render", "Render the current project"],
-  ["shiftcut check", "Validate a composition"],
-  ["shiftcut doctor", "Check the local environment"],
+  ["ultracut init <dir>", "Scaffold a new project"],
+  ["ultracut preview", "Live browser preview with hot reload"],
+  ["ultracut render", "Render the current project"],
+  ["ultracut check", "Validate a composition"],
+  ["ultracut doctor", "Check the local environment"],
 ];
 
 export default function Cli() {
@@ -25,8 +25,8 @@ export default function Cli() {
       />
 
       <Callout tone="muted" title="Installing the skill?">
-        To add ShiftCut to your agent, use{" "}
-        <code>npx skills add Vadagon/shiftcut</code> — see{" "}
+        To add UltraCut to your agent, use{" "}
+        <code>npx skills add Vadagon/ultracut</code> — see{" "}
         <a href="/docs/installation">Installation</a>. The commands below are for
         working with a project directly.
       </Callout>
@@ -48,8 +48,8 @@ export default function Cli() {
       </div>
 
       <H2>Preview &amp; render</H2>
-      <Code>{`$ shiftcut preview          # watch it live in the browser
-$ shiftcut render --out out/  # render to a file`}</Code>
+      <Code>{`$ ultracut preview          # watch it live in the browser
+$ ultracut render --out out/  # render to a file`}</Code>
 
       <Callout title="Built for CI">
         Renders are reproducible, so the CLI drops straight into pipelines —

@@ -13,7 +13,7 @@ import {
 export const metadata: Metadata = {
   title: "Quickstart",
   description:
-    "Add ShiftCut to your coding agent and make your first edit — turn a video into shorts from a single prompt.",
+    "Add UltraCut to your coding agent and make your first edit — turn a video into shorts from a single prompt.",
 };
 
 export default function Quickstart() {
@@ -32,14 +32,14 @@ export default function Quickstart() {
 
       <Steps>
         <Step title="Add the skill to your agent">
-          <P>One command installs ShiftCut for your coding agent:</P>
-          <Code>{`$ npx skills add Vadagon/shiftcut`}</Code>
+          <P>One command installs UltraCut for your coding agent:</P>
+          <Code>{`$ npx skills add Vadagon/ultracut`}</Code>
         </Step>
 
         <Step title="Restart your agent">
           <P>
             Reload your agent so it picks up the skill. In Claude Code, start a
-            message with <code>/shiftcut</code> to load the editing context.
+            message with <code>/ultracut</code> to load the editing context.
           </P>
         </Step>
 
@@ -47,9 +47,9 @@ export default function Quickstart() {
           <P>
             No project to scaffold — just reference any file you already have:
           </P>
-          <Code>{`❯ /shiftcut open interview.mp4`}</Code>
+          <Code>{`❯ /ultracut open interview.mp4`}</Code>
           <P>
-            ShiftCut watches the footage locally — transcript, scenes, and
+            UltraCut watches the footage locally — transcript, scenes, and
             silences — so it can edit against what&apos;s actually there.
           </P>
         </Step>
@@ -58,7 +58,7 @@ export default function Quickstart() {
           <P>Tell your agent what you want in plain language:</P>
           <Code>{`❯ cut it into 5 shorts, add captions, and export vertical`}</Code>
           <P>
-            ShiftCut finds the strongest moments, reframes to 9:16, styles
+            UltraCut finds the strongest moments, reframes to 9:16, styles
             captions, and renders — telling you what it did so you can adjust.
           </P>
         </Step>
@@ -79,7 +79,7 @@ export default function Quickstart() {
         The same edits run headless from the CLI, so they drop straight into
         scripts and CI:
       </P>
-      <Code>{`$ shiftcut render --out out/`}</Code>
+      <Code>{`$ ultracut render --out out/`}</Code>
 
       <Callout tone="muted" title="Same result, every time">
         A composition always renders the same. Commit the project folder and

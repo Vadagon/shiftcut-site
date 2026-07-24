@@ -12,7 +12,7 @@ export interface TProject {
   name: string;
   /** Durable, model-facing explanation of the complete composition. */
   compositionDescription?: string;
-  revision: number; // monotonic; +1 on every mutation (ShiftCut contract, see PRD)
+  revision: number; // monotonic; +1 on every mutation (UltraCut contract, see PRD)
   settings: ProjectSettings;
   createdAt: number;
   updatedAt: number;

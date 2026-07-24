@@ -124,7 +124,7 @@ export function NextCard({ href, label }: { href: string; label: string }) {
 export function ComingSoon() {
   return (
     <Callout tone="muted" title="This page is on the way">
-      ShiftCut is under active development and this section of the docs is still
+      UltraCut is under active development and this section of the docs is still
       being written. The structure below reflects what it will cover.
     </Callout>
   );

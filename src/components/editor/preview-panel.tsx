@@ -1,6 +1,6 @@
 "use client";
 
-// HTML/DOM preview (ShiftCut renderer — NOT OpenCut's canvas). Composites the
+// HTML/DOM preview (UltraCut renderer — NOT OpenCut's canvas). Composites the
 // active elements at the current playback time. Each media element syncs a
 // <video>/<img>; params drive the CSS transform.
 
