@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useProjectStore } from "@/stores/project-store";
 import { useTimelineStore } from "@/stores/timeline-store";
 import { useMediaStore } from "@/stores/media-store";
@@ -103,12 +104,29 @@ export function AiChat() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [progressOpenId, setProgressOpenId] = useState<string | null>(null);
   const [copiedErrorId, setCopiedErrorId] = useState<string | null>(null);
+  const [subscriptionActive, setSubscriptionActive] = useState(false);
+  const [paywallOpen, setPaywallOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const project = useProjectStore((state) => state.activeProject);
   const tracks = useTimelineStore((state) => state.tracks);
   const selectedElementId = useTimelineStore((state) => state.selectedElementId);
   const pool = useMediaStore((state) => state.pool);
   const components = useComponentStore((state) => state.components);
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/subscription/status", { cache: "no-store" })
+      .then((response) => response.ok ? response.json() : null)
+      .then((result: { active?: unknown } | null) => {
+        if (!cancelled) setSubscriptionActive(result?.active === true);
+      })
+      .catch(() => {
+        if (!cancelled) setSubscriptionActive(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -409,6 +427,11 @@ export function AiChat() {
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    if (!draft.trim() || isSending) return;
+    if (!subscriptionActive) {
+      setPaywallOpen(true);
+      return;
+    }
     void sendRequest(draft.trim());
   };
 
@@ -503,6 +526,32 @@ export function AiChat() {
           </div>
         </form>
       </div>
+      {paywallOpen && (
+        <div role="dialog" aria-modal="true" aria-labelledby="ai-subscription-title" className="absolute inset-0 z-[100] flex items-center justify-center bg-black/35 p-5">
+          <div className="w-full max-w-[360px] border border-[#bdb9b3] bg-[#f8f7f5] p-5 shadow-[0_18px_50px_rgba(0,0,0,.28)]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 id="ai-subscription-title" className="text-[16px] font-semibold text-[#302e2b]">Use AI editing</h2>
+                <p className="mt-2 text-[12px] leading-5 text-[#69645e]">Subscribe to use ShiftCut AI, or connect your own agent over MCP.</p>
+              </div>
+              <button type="button" onClick={() => setPaywallOpen(false)} aria-label="Close" className="text-[19px] leading-none text-[#77726c] hover:text-[#302e2b]">×</button>
+            </div>
+            <div className="mt-5 grid gap-2">
+              <Link href="/pricing" className="flex h-10 items-center justify-center rounded-[4px] bg-[#e57438] px-4 text-[12px] font-semibold text-white hover:bg-[#d96930]">Subscribe</Link>
+              <button
+                type="button"
+                onClick={() => {
+                  setPaywallOpen(false);
+                  window.setTimeout(() => window.dispatchEvent(new CustomEvent("shiftcut:mcp-open", { detail: { placement: "above" } })), 0);
+                }}
+                className="h-10 rounded-[4px] border border-[#aaa69f] bg-[#f7f6f4] px-4 text-[12px] font-semibold text-[#514c46] hover:bg-[#e7e4df]"
+              >
+                Connect your own agent
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </aside>
   );
 }

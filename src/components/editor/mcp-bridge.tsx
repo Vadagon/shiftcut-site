@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { storageService } from "@/lib/storage/storage-service";
 import { serializeCompactProject } from "@/lib/composition-dsl";
 import { parseEditorTransaction, simulateTransaction } from "@/lib/ai-transaction-protocol";
@@ -15,69 +15,179 @@ import { validateGeneratedComponent } from "@/components/generated-component-run
 import { captureHtmlPlayer } from "@/render/capture-html-player";
 import { usePlaybackStore } from "@/stores/playback-store";
 
-const BRIDGE_URL = process.env.NEXT_PUBLIC_SHIFTCUT_MCP_BRIDGE_URL ?? "ws://127.0.0.1:43891";
-
 type BridgeRequest = { id: string; method: string; params?: Record<string, unknown> };
+export type McpConnectionState = "unavailable" | "bridge_ready" | "approval_required" | "connected" | "error";
+export type McpStatusDetail = {
+  state: McpConnectionState;
+  connected: boolean;
+  agentName?: string;
+  agentVersion?: string;
+  error?: string;
+  mcpUrl?: string;
+  pairingCode?: string;
+};
 
-export function McpBridge() {
+type RelaySession = {
+  approved: boolean;
+  agentName?: string;
+  agentVersion?: string;
+};
+type StoredMcpSession = { token?: unknown; pairingCode?: unknown; expiresAt?: unknown };
+
+const MUTATING_METHODS = new Set(["apply_transaction", "replace_component", "upload_assets"]);
+let mutationQueue: Promise<void> = Promise.resolve();
+
+function dispatchStatus(detail: Omit<McpStatusDetail, "connected"> & { connected?: boolean }) {
+  window.dispatchEvent(new CustomEvent<McpStatusDetail>("shiftcut:mcp-status", {
+    detail: { ...detail, connected: detail.connected ?? detail.state === "connected" },
+  }));
+}
+
+export function McpBridge({ projectId, projectName }: { projectId: string; projectName: string }) {
+  const projectNameRef = useRef(projectName);
   useEffect(() => {
-    let socket: WebSocket | null = null;
-    let retry: ReturnType<typeof setTimeout> | null = null;
+    projectNameRef.current = projectName;
+  }, [projectName]);
+  useEffect(() => {
     let stopped = false;
-    let manuallyDisconnected = false;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
+    const storageKey = `shiftcut:mcp-session:${projectId}`;
+    let token = "";
+    let pairingCode = "";
+    let mcpUrl = "";
 
-    const connect = () => {
-      if (stopped || manuallyDisconnected || socket?.readyState === WebSocket.OPEN || socket?.readyState === WebSocket.CONNECTING) return;
-      socket = new WebSocket(BRIDGE_URL);
-      socket.addEventListener("open", () => {
-        window.dispatchEvent(new CustomEvent("shiftcut:mcp-status", { detail: { connected: true } }));
-        socket?.send(JSON.stringify({ type: "hello", client: "shiftcut-editor", projectId: useProjectStore.getState().activeProject?.id ?? null }));
+    const postSession = async (body: Record<string, unknown>, targetToken = token) => {
+      const response = await fetch("/api/mcp/session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: targetToken, ...body }),
       });
-      socket.addEventListener("message", (event) => {
-        void handleBridgeRequest(JSON.parse(String(event.data)) as BridgeRequest)
-          .then((result) => socket?.send(JSON.stringify({ id: JSON.parse(String(event.data)).id, result })))
-          .catch((error) => socket?.send(JSON.stringify({ id: JSON.parse(String(event.data)).id, error: error instanceof Error ? error.message : "MCP command failed." })));
-      });
-      socket.addEventListener("close", () => {
-        window.dispatchEvent(new CustomEvent("shiftcut:mcp-status", { detail: { connected: false } }));
-        socket = null;
-        if (!stopped && !manuallyDisconnected) retry = setTimeout(connect, 1500);
+      if (!response.ok) throw new Error((await response.json() as { error?: string }).error ?? "MCP session request failed.");
+    };
+
+    const publishStatus = (session?: RelaySession) => {
+      dispatchStatus({
+        state: session?.approved && session.agentName ? "connected" : "bridge_ready",
+        agentName: session?.agentName,
+        agentVersion: session?.agentVersion,
+        mcpUrl,
+        pairingCode,
       });
     };
-    const disconnect = () => {
-      manuallyDisconnected = true;
-      if (retry) {
-        clearTimeout(retry);
-        retry = null;
+
+    const poll = async () => {
+      if (stopped || !token) return;
+      if (pollTimer) clearTimeout(pollTimer);
+      pollTimer = null;
+      const activeToken = token;
+      try {
+        const response = await fetch(`/api/mcp/session?token=${encodeURIComponent(activeToken)}`, { cache: "no-store" });
+        if (!response.ok) throw new Error((await response.json() as { error?: string }).error ?? "MCP session expired.");
+        const body = await response.json() as { session: RelaySession; command?: BridgeRequest | null };
+        if (activeToken !== token) return;
+        publishStatus(body.session);
+        if (body.command) {
+          try {
+            const result = await scheduleBridgeRequest(body.command);
+            await postSession({ action: "result", commandId: body.command.id, result }, activeToken);
+          } catch (error) {
+            await postSession({ action: "result", commandId: body.command.id, error: error instanceof Error ? error.message : "MCP command failed." }, activeToken);
+          }
+        }
+      } catch (error) {
+        dispatchStatus({ state: "error", error: error instanceof Error ? error.message : "Could not reach the MCP relay.", mcpUrl, pairingCode });
       }
-      socket?.close(1000, "Disconnected by editor user");
-      socket = null;
-      window.dispatchEvent(new CustomEvent("shiftcut:mcp-status", { detail: { connected: false } }));
+      if (!stopped && activeToken === token) pollTimer = setTimeout(poll, 750);
     };
-    const reconnect = () => {
-      manuallyDisconnected = false;
-      connect();
+
+    const startSession = async (forceNew = false) => {
+      if (pollTimer) clearTimeout(pollTimer);
+      let saved: StoredMcpSession | null = null;
+      if (!forceNew) {
+        try {
+          saved = JSON.parse(sessionStorage.getItem(storageKey) ?? "null") as StoredMcpSession | null;
+        } catch {
+          sessionStorage.removeItem(storageKey);
+        }
+      }
+      const savedExpired = typeof saved?.expiresAt === "number" && saved.expiresAt <= Date.now();
+      if (savedExpired) {
+        sessionStorage.removeItem(storageKey);
+        saved = null;
+      }
+      if (typeof saved?.token === "string" && typeof saved.pairingCode === "string") {
+        token = saved.token;
+        pairingCode = saved.pairingCode;
+      } else {
+        const bytes = crypto.getRandomValues(new Uint8Array(32));
+        token = btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+        pairingCode = `${token.slice(0, 4)}-${token.slice(4, 8)}`.toUpperCase();
+        sessionStorage.setItem(storageKey, JSON.stringify({ token, pairingCode, expiresAt: Date.now() + 6 * 60 * 60 * 1000 }));
+      }
+      mcpUrl = `${window.location.origin}/api/mcp?token=${encodeURIComponent(token)}`;
+      dispatchStatus({ state: "bridge_ready", mcpUrl, pairingCode });
+      try {
+        if (saved) {
+          const existing = await fetch(`/api/mcp/session?token=${encodeURIComponent(token)}&status=1`, { cache: "no-store" });
+          if (existing.ok) {
+            await poll();
+            return;
+          }
+          // A dev-server restart or serverless eviction can remove relay state.
+          // Recreate it with the same capability URL so editor reloads never
+          // silently invalidate an agent's saved connection.
+          await postSession({ action: "create", pairingCode, projectId, projectName: projectNameRef.current });
+          await poll();
+          return;
+        }
+        await postSession({ action: "create", pairingCode, projectId, projectName: projectNameRef.current });
+        await poll();
+      } catch (error) {
+        dispatchStatus({ state: "error", error: error instanceof Error ? error.message : "Could not create an MCP pairing link.", mcpUrl, pairingCode });
+      }
     };
-    window.addEventListener("shiftcut:mcp-disconnect", disconnect);
+
+    const revoke = async () => {
+      try {
+        await postSession({ action: "revoke" });
+      } finally {
+        sessionStorage.removeItem(storageKey);
+        await startSession(true);
+      }
+    };
+
+    const reconnect = () => void startSession();
+    const revokeEvent = () => void revoke();
     window.addEventListener("shiftcut:mcp-reconnect", reconnect);
-    connect();
+    window.addEventListener("shiftcut:mcp-revoke", revokeEvent);
+    void startSession();
     return () => {
       stopped = true;
-      if (retry) clearTimeout(retry);
-      socket?.close();
-      window.removeEventListener("shiftcut:mcp-disconnect", disconnect);
+      if (pollTimer) clearTimeout(pollTimer);
       window.removeEventListener("shiftcut:mcp-reconnect", reconnect);
-      window.dispatchEvent(new CustomEvent("shiftcut:mcp-status", { detail: { connected: false } }));
+      window.removeEventListener("shiftcut:mcp-revoke", revokeEvent);
+      dispatchStatus({ state: "unavailable" });
     };
-  }, []);
+  }, [projectId]);
   return null;
 }
 
+function scheduleBridgeRequest(request: BridgeRequest) {
+  if (!MUTATING_METHODS.has(request.method)) return handleBridgeRequest(request);
+  const result = mutationQueue.then(() => handleBridgeRequest(request));
+  mutationQueue = result.then(() => undefined, () => undefined);
+  return result;
+}
+
 async function handleBridgeRequest(request: BridgeRequest) {
+  const projectBeforeHydration = useProjectStore.getState().activeProject;
+  if (!projectBeforeHydration) throw new Error("No ShiftCut project is open.");
+  const hydrated = await hydrateProjectContext(projectBeforeHydration.id, useTimelineStore.getState().tracks);
   const project = useProjectStore.getState().activeProject;
-  if (!project) throw new Error("No ShiftCut project is open.");
+  if (!project || project.id !== projectBeforeHydration.id) throw new Error("The open ShiftCut project changed while preparing the MCP command.");
   const timeline = useTimelineStore.getState();
-  const { media, components } = await hydrateProjectContext(project.id, timeline.tracks);
+  const media = useMediaStore.getState();
+  const components = hydrated.components;
   const params = request.params ?? {};
 
   switch (request.method) {

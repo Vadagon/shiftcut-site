@@ -15,6 +15,7 @@ import { AiChat } from "./ai-chat";
 import { ExportDialog } from "./export-dialog";
 import { McpAgentSelector } from "./mcp-agent-selector";
 import { McpBridge } from "./mcp-bridge";
+import { RevisionHistoryDrawer } from "./revision-history-drawer";
 
 const MIN_CHAT_WIDTH = 260;
 const MIN_ASSETS_WIDTH = 260;
@@ -46,6 +47,7 @@ export function Editor({ projectId }: { projectId: string }) {
   const [visiblePanels, setVisiblePanels] = useState({ chat: true, assets: true, viewer: true, timeline: true });
   const [mcpConnected, setMcpConnected] = useState(false);
   const [layoutOpen, setLayoutOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const layoutRef = useRef<HTMLElement>(null);
   const workspaceRef = useRef<HTMLElement>(null);
@@ -135,7 +137,7 @@ export function Editor({ projectId }: { projectId: string }) {
 
   return (
     <>
-    <McpBridge />
+    <McpBridge projectId={activeProject.id} projectName={activeProject.name} />
     <div className="h-dvh overflow-hidden bg-[#e9e8e5] text-[#35332f]">
       <header className="relative flex h-14 shrink-0 items-center justify-between border-b border-[#cecdc9] bg-[#efeeeb] px-4">
           <Link href="/editor" aria-label="All projects" className="rounded-md p-1 text-[#4a4743] hover:bg-[#efedea]"><HomeIcon /></Link>
@@ -146,12 +148,11 @@ export function Editor({ projectId }: { projectId: string }) {
           <div className="relative flex items-center gap-2.5">
             <button onClick={undo} disabled={!canUndo} title="Undo" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 disabled:opacity-30"><I.undo width={18} height={18} /></button>
             <button onClick={redo} disabled={!canRedo} title="Redo" className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 disabled:opacity-30"><I.redo width={18} height={18} /></button>
-            <button title="History" className="rounded-lg p-2 text-[#4e4a45] hover:bg-[#efedea]">◴</button>
+            <button type="button" title="History" aria-expanded={historyOpen} onClick={() => setHistoryOpen((open) => !open)} className={`rounded-lg p-2 text-[#4e4a45] hover:bg-[#efedea] ${historyOpen ? "bg-[#dfdcd7]" : ""}`}>◴</button>
             <button type="button" onClick={() => setLayoutOpen((open) => !open)} title="Panels" aria-expanded={layoutOpen} className="rounded-lg p-2 text-[#4e4a45] hover:bg-[#efedea]">⊞</button>
             {layoutOpen && <PanelVisibilityMenu visiblePanels={visiblePanels} onToggle={(panel) => setVisiblePanels((current) => ({ ...current, [panel]: !current[panel] }))} />}
             <McpAgentSelector />
             <button type="button" onClick={() => setExportOpen(true)} className="rounded-[4px] border border-[#c65d2d] bg-[#e57438] px-5 py-2 text-[13px] font-semibold text-white shadow-[inset_0_1px_rgba(255,255,255,.35)] hover:bg-[#d96930]">Export</button>
-            <span className="border-l border-[#d2cfca] pl-3 text-[13px] font-semibold text-[#56524d]">✣ 4.6</span><span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#d7b49d] text-[11px] font-semibold text-white">S</span>
           </div>
       </header>
 
@@ -169,6 +170,7 @@ export function Editor({ projectId }: { projectId: string }) {
         </section>
       </main>
       {exportOpen && <ExportDialog project={activeProject} tracks={tracks} pool={pool} components={components} onClose={() => setExportOpen(false)} />}
+      {historyOpen && <RevisionHistoryDrawer projectId={activeProject.id} currentRevision={activeProject.revision} onClose={() => setHistoryOpen(false)} />}
     </div>
     </>
   );

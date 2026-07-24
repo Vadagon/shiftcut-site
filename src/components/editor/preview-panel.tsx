@@ -97,6 +97,8 @@ function useMediaUrl(mediaId?: string) {
 function Layer({ el, time, playing, selected, onSelect, canvas }: { el: TimelineElement; time: number; playing: boolean; selected: boolean; onSelect: () => void; canvas: { width: number; height: number } }) {
   const artifact = useComponentStore((state) => el.componentId ? state.components[el.componentId] : undefined);
   const p = el.params;
+  const componentAssetIds = Array.isArray(p.assetIds) ? p.assetIds.filter((id): id is string => typeof id === "string") : [];
+  const componentAssets = useMediaUrls(componentAssetIds);
   const layout = getMediaLayout(p);
   const style: React.CSSProperties = {
     ...layout.containerStyle,
@@ -113,7 +115,7 @@ function Layer({ el, time, playing, selected, onSelect, canvas }: { el: Timeline
       };
       const compatibility = validateGeneratedComponent(artifact.code);
       return <div style={generatedStyle} onMouseDown={onSelect}>
-        {compatibility.compatible ? <GeneratedComponentRuntime code={artifact.code} props={{ ...el.params, params: el.params, localTime: Math.max(0, time - el.startTime), timelineTime: time, elementStartTime: el.startTime, duration: elementEnd(el) - el.startTime, canvasWidth: canvas.width, canvasHeight: canvas.height }} /> : <div className="flex h-full items-center justify-center text-sm text-red-400">Component needs regeneration</div>}
+        {compatibility.compatible ? <GeneratedComponentRuntime code={artifact.code} props={{ ...el.params, params: el.params, localTime: Math.max(0, time - el.startTime), timelineTime: time, elementStartTime: el.startTime, duration: elementEnd(el) - el.startTime, canvasWidth: canvas.width, canvasHeight: canvas.height, assets: componentAssets }} /> : <div className="flex h-full items-center justify-center text-sm text-red-400">Component needs regeneration</div>}
       </div>;
     }
     return <div style={style} onMouseDown={onSelect} className="flex items-center justify-center"><span style={{ color: (p.color as string) ?? "#fff", fontSize: (p.fontSize as number) ?? 48 }}>{(p.text as string) ?? "Text"}</span></div>;
@@ -121,6 +123,31 @@ function Layer({ el, time, playing, selected, onSelect, canvas }: { el: Timeline
   if (el.component === "ImagePlayer") return <ImageLayer el={el} style={style} mediaStyle={layout.mediaStyle} onSelect={onSelect} />;
   if (el.component === "AudioPlayer") return <AudioLayer el={el} time={time} playing={playing} />;
   return <VideoLayer el={el} time={time} playing={playing} style={style} mediaStyle={layout.mediaStyle} onSelect={onSelect} />;
+}
+
+function useMediaUrls(mediaIds: string[]) {
+  const key = mediaIds.join("\u0000");
+  const [urls, setUrls] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let active = true;
+    const loaded: string[] = [];
+    void Promise.all(mediaIds.map(async (id) => {
+      const url = await storageService.getMediaUrl(id);
+      if (!url) return null;
+      loaded.push(url);
+      return [id, url] as const;
+    })).then((entries) => {
+      if (active) setUrls(Object.fromEntries(entries.filter((entry): entry is readonly [string, string] => entry !== null)));
+      else for (const url of loaded) URL.revokeObjectURL(url);
+    });
+    return () => {
+      active = false;
+      for (const url of loaded) URL.revokeObjectURL(url);
+    };
+  // The stable joined key prevents a fresh array from reloading blobs each render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return urls;
 }
 
 function VideoLayer({ el, time, playing, style, mediaStyle, onSelect }: { el: TimelineElement; time: number; playing: boolean; style: React.CSSProperties; mediaStyle: React.CSSProperties; onSelect: () => void }) {
@@ -142,7 +169,6 @@ function VideoLayer({ el, time, playing, style, mediaStyle, onSelect }: { el: Ti
 
 function ImageLayer({ el, style, mediaStyle, onSelect }: { el: TimelineElement; style: React.CSSProperties; mediaStyle: React.CSSProperties; onSelect: () => void }) {
   const url = useMediaUrl(el.mediaId);
-  // eslint-disable-next-line @next/next/no-img-element
   return <div style={style} onMouseDown={onSelect}>
     {/* eslint-disable-next-line @next/next/no-img-element */}
     <img src={url ?? undefined} alt="" style={mediaStyle} />

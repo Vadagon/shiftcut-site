@@ -1,31 +1,27 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-
-type Agent = {
-  id: "codex" | "claude" | "gemini";
-  name: string;
-  detail: string;
-};
-
-const AGENTS: Agent[] = [
-  { id: "codex", name: "Codex", detail: "Connect Codex to ShiftCut’s MCP server, then authorize access to the current project." },
-  { id: "claude", name: "Claude", detail: "Add ShiftCut as an MCP server in Claude Desktop or Claude Code, then open this project." },
-  { id: "gemini", name: "Gemini", detail: "Register ShiftCut’s MCP endpoint in Gemini CLI, then grant access to the current project." },
-];
+import type { McpStatusDetail } from "./mcp-bridge";
 
 export function McpAgentSelector({ placement = "below", compact = false }: { placement?: "above" | "below"; compact?: boolean }) {
   const [open, setOpen] = useState(false);
-  const [expandedAgent, setExpandedAgent] = useState<Agent["id"] | null>(null);
-  const [connected, setConnected] = useState(false);
+  const [status, setStatus] = useState<McpStatusDetail>({ state: "unavailable", connected: false });
   const [copied, setCopied] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const update = (event: Event) => setConnected(Boolean((event as CustomEvent<{ connected?: boolean }>).detail?.connected));
+    const update = (event: Event) => setStatus((event as CustomEvent<McpStatusDetail>).detail);
+    const openSelector = (event: Event) => {
+      const requestedPlacement = (event as CustomEvent<{ placement?: "above" | "below" }>).detail?.placement;
+      if (!requestedPlacement || requestedPlacement === placement) setOpen(true);
+    };
     window.addEventListener("shiftcut:mcp-status", update);
-    return () => window.removeEventListener("shiftcut:mcp-status", update);
-  }, []);
+    window.addEventListener("shiftcut:mcp-open", openSelector);
+    return () => {
+      window.removeEventListener("shiftcut:mcp-status", update);
+      window.removeEventListener("shiftcut:mcp-open", openSelector);
+    };
+  }, [placement]);
 
   useEffect(() => {
     if (!open) return;
@@ -43,89 +39,90 @@ export function McpAgentSelector({ placement = "below", compact = false }: { pla
     };
   }, [open]);
 
+  const connected = status.state === "connected";
+
   return (
     <div ref={rootRef} className={compact ? "absolute right-3 top-3 z-40" : "relative"}>
       <button
         type="button"
-        aria-haspopup="menu"
+        aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
         className="inline-flex items-center gap-1.5 whitespace-nowrap py-1 text-[10px] font-semibold text-[#8d8982] hover:text-[#4f4b46]"
       >
         <i className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-[#4f9662]" : "bg-[#aaa69f]"}`} />
-        MCP{connected ? " · connected" : ""}
+        {connected ? `${status.agentName || "Agent"} · connected` : "Connect agent"}
         <span className="text-[8px]">{open ? "▴" : "▾"}</span>
       </button>
 
       {open && (
         <div
-          role="menu"
-          aria-label="MCP agents"
-          className={`absolute right-0 z-50 w-[272px] border border-[#c9c7c2] bg-[#f6f5f2] p-1.5 text-left shadow-[0_8px_24px_rgba(0,0,0,.16)] ${placement === "above" ? "bottom-7" : "top-7"}`}
+          role="dialog"
+          aria-label="Connect an AI agent"
+          className={`absolute right-0 z-50 w-[310px] border border-[#c9c7c2] bg-[#f6f5f2] p-3 text-left shadow-[0_8px_24px_rgba(0,0,0,.16)] ${placement === "above" ? "bottom-7" : "top-7"}`}
         >
-          <div className="border-b border-[#d7d4cf] px-2 pb-2 pt-1">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-[11px] font-semibold text-[#3f3b37]">{connected ? "MCP connection live" : "Connect your AI agent"}</p>
-              {connected && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    window.dispatchEvent(new CustomEvent("shiftcut:mcp-disconnect"));
-                    setOpen(false);
-                  }}
-                  className="border border-[#c8a6a1] bg-[#fff8f7] px-2 py-1 text-[9px] font-semibold text-[#a34a3d] hover:bg-[#f7e2df]"
-                >
-                  Disconnect
-                </button>
-              )}
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[12px] font-semibold text-[#3f3b37]">{heading(status)}</p>
+              <p className="mt-1 text-[10px] leading-4 text-[#77726c]">{description(status)}</p>
             </div>
-            <p className="mt-0.5 text-[10px] leading-4 text-[#77726c]">{connected ? "The open project is connected to an MCP agent." : "Connect an MCP agent, then keep this project tab open."}</p>
-            {!connected && (
+            {connected && (
               <button
                 type="button"
-                onClick={() => window.dispatchEvent(new CustomEvent("shiftcut:mcp-reconnect"))}
-                className="mt-2 border border-[#bdb9b3] bg-[#f7f6f4] px-2 py-1 text-[9px] font-semibold text-[#5b5751] hover:bg-[#e4e1dc]"
+                onClick={() => window.dispatchEvent(new CustomEvent("shiftcut:mcp-revoke"))}
+                className="shrink-0 border border-[#c8a6a1] bg-[#fff8f7] px-2 py-1 text-[9px] font-semibold text-[#a34a3d] hover:bg-[#f7e2df]"
               >
-                Reconnect
+                Revoke
               </button>
             )}
           </div>
-          {AGENTS.map((agent) => {
-            const expanded = expandedAgent === agent.id;
-            return (
-              <div key={agent.id} className="border-b border-[#dfdcd7] last:border-0">
-                <button
-                  type="button"
-                  role="menuitem"
-                  aria-expanded={expanded}
-                  onClick={() => setExpandedAgent(expanded ? null : agent.id)}
-                  className="flex w-full items-center gap-2 px-2 py-2 text-[11px] text-[#48443f] hover:bg-[#e8e5e0]"
-                >
-                  <span className="h-2 w-2 rounded-full border border-[#aaa69f] bg-[#dedbd6]" />
-                  <span className="flex-1 font-semibold">{agent.name}</span>
-                  <span className={`text-[9px] font-medium ${connected && agent.id === "codex" ? "text-[#4f9662]" : "text-[#9a958e]"}`}>{connected && agent.id === "codex" ? "Connected" : "Setup"}</span>
-                  <span className="text-[#77726c]">{expanded ? "−" : "+"}</span>
-                </button>
-                {expanded && (
-                  <div className="bg-[#eeece8] px-4 py-3 text-[10px] leading-4 text-[#68635d]">
-                    <p>{agent.detail}</p>
-                    <button type="button" onClick={() => {
-                      const command = agent.id === "codex"
-                        ? "codex mcp add shiftcut -- node /Users/movebender/Work/video-editor/shiftcut-mcp/dist/server.js"
-                        : `Configure ${agent.name} with stdio command: node /Users/movebender/Work/video-editor/shiftcut-mcp/dist/server.js`;
-                      void navigator.clipboard.writeText(command);
-                      setCopied(true);
-                      window.setTimeout(() => setCopied(false), 1500);
-                    }} className="mt-2 w-full border border-[#bdb9b3] bg-[#f7f6f4] px-2 py-1.5 font-semibold text-[#5b5751] hover:bg-[#e4e1dc]">
-                      {copied ? "Setup copied" : `Copy ${agent.name} setup`}
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+
+          {!connected && status.mcpUrl && (
+            <div className="mt-3 border-t border-[#d7d4cf] pt-3">
+              <ol className="space-y-2 text-[10px] leading-4 text-[#5f5a54]">
+                <li><span className="mr-1.5 font-semibold text-[#3f3b37]">1.</span>Copy your private MCP connection URL.</li>
+                <li><span className="mr-1.5 font-semibold text-[#3f3b37]">2.</span>Paste it into Codex, ChatGPT, Claude, or any remote MCP client.</li>
+              </ol>
+              <button
+                type="button"
+                onClick={() => {
+                  void navigator.clipboard.writeText(status.mcpUrl ?? "");
+                  setCopied(true);
+                  window.setTimeout(() => setCopied(false), 1500);
+                }}
+                className="mt-3 w-full border border-[#bdb9b3] bg-[#f7f6f4] px-2 py-2 text-[10px] font-semibold text-[#5b5751] hover:bg-[#e4e1dc]"
+              >
+                {copied ? "MCP URL copied" : "Copy MCP connection URL"}
+              </button>
+              <p className="mt-2 text-center text-[9px] text-[#8a857e]">Pairing code: <span className="font-mono font-semibold text-[#5b5751]">{status.pairingCode}</span> · expires in 6 hours</p>
+            </div>
+          )}
+
+          {(status.state === "unavailable" || status.state === "error") && (
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent("shiftcut:mcp-reconnect"))}
+              className="mt-3 border border-[#bdb9b3] bg-[#f7f6f4] px-2 py-1 text-[9px] font-semibold text-[#5b5751] hover:bg-[#e4e1dc]"
+            >
+              Create a new link
+            </button>
+          )}
+
+          <p className="mt-3 border-t border-[#d7d4cf] pt-2 text-[9px] leading-4 text-[#8a857e]">No installation or approval step required. Anyone with this private link can access the open project until you revoke it or it expires.</p>
         </div>
       )}
     </div>
   );
+}
+
+function heading(status: McpStatusDetail) {
+  if (status.state === "connected") return `${status.agentName || "MCP agent"} is connected`;
+  if (status.state === "error") return "Could not create the MCP link";
+  return "Connect any AI agent";
+}
+
+function description(status: McpStatusDetail) {
+  if (status.state === "connected") return "The agent can use tools on this project until you revoke access or the link expires.";
+  if (status.state === "error") return status.error || "The connection service is temporarily unavailable.";
+  return "Use one secure URL with any agent that supports remote MCP over HTTP.";
 }

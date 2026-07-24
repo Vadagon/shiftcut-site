@@ -3,6 +3,7 @@ import Link from "next/link";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { site } from "@/lib/site";
+import { ActivateSubscriberSession } from "./activate-subscriber-session";
 
 export const metadata: Metadata = {
   title: "You're all set",
@@ -12,6 +13,7 @@ export const metadata: Metadata = {
 export default function BillingSuccessPage() {
   return (
     <>
+      <ActivateSubscriberSession />
       <SiteHeader />
       <main className="flex-1">
         <div className="mx-auto max-w-xl px-5 py-24 text-center sm:px-8">

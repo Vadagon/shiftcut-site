@@ -21,8 +21,12 @@ export async function createRenderManifest({
   const frozenProject = structuredClone(project);
   const frozenTracks = structuredClone(tracks);
   const frozenComponents = structuredClone(components);
-  const mediaIds = [...new Set(frozenTracks.flatMap((track) => track.elements.flatMap((element) => element.mediaId ? [element.mediaId] : [])))];
   const metadata = new Map(pool.map((item) => [item.id, item]));
+  const knownMediaIds = new Set(metadata.keys());
+  const mediaIds = [...new Set(frozenTracks.flatMap((track) => track.elements.flatMap((element) => [
+    ...(element.mediaId ? [element.mediaId] : []),
+    ...collectReferencedMediaIds(element.params, knownMediaIds),
+  ])))];
   const urls: string[] = [];
   const assets: Record<string, RenderAsset> = {};
 
@@ -85,4 +89,11 @@ export async function createRenderManifest({
       for (const url of urls) URL.revokeObjectURL(url);
     },
   };
+}
+
+function collectReferencedMediaIds(value: unknown, knownMediaIds: Set<string>): string[] {
+  if (typeof value === "string") return knownMediaIds.has(value) ? [value] : [];
+  if (Array.isArray(value)) return value.flatMap((item) => collectReferencedMediaIds(item, knownMediaIds));
+  if (value && typeof value === "object") return Object.values(value).flatMap((item) => collectReferencedMediaIds(item, knownMediaIds));
+  return [];
 }

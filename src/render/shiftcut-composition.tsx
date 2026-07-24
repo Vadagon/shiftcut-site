@@ -69,6 +69,7 @@ function Element({ element, track, manifest, fps, clippedHeadFrames }: { element
         duration: effectiveDuration(element),
         canvasWidth: manifest.project.settings.width,
         canvasHeight: manifest.project.settings.height,
+        assets: Object.fromEntries(Object.entries(manifest.assets).map(([id, asset]) => [id, asset.url])),
       }} />
     </AbsoluteFill>;
   }

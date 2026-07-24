@@ -5,6 +5,15 @@ _Open any video, tell your coding agent what you want, and ShiftCut does the edi
 
 Built with **Next.js 16 (App Router)**, **React 19**, **Tailwind CSS v4**, and deployable to **Vercel**.
 
+## Remote MCP
+
+The editor exposes a project-scoped Streamable HTTP endpoint at `/api/mcp`.
+Users copy the private capability URL shown in the editor and paste it into
+their agent; possession of that URL grants access until it expires or is
+revoked. Local development uses an in-memory relay. Vercel deployments require `UPSTASH_REDIS_REST_URL` and
+`UPSTASH_REDIS_REST_TOKEN` so pairing sessions and tool calls survive across
+serverless requests.
+
 > This repo is the **website only**. The ShiftCut editing engine/framework is a
 > separate, upcoming project. Copy here describes intended capabilities.
 

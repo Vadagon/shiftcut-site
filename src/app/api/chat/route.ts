@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { moderateLatestUserMessage } from "@/lib/moderation";
+import { requestHasActiveSubscription } from "@/lib/subscriber-session";
 
 export const runtime = "nodejs";
 
@@ -24,6 +25,9 @@ function validMessages(value: unknown): value is ProxyMessage[] {
 }
 
 export async function POST(request: Request) {
+  if (!(await requestHasActiveSubscription(request))) {
+    return NextResponse.json({ error: "An active ShiftCut AI subscription is required." }, { status: 402 });
+  }
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) return NextResponse.json({ error: "OpenRouter is not configured." }, { status: 503 });
 
