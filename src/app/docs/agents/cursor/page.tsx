@@ -3,7 +3,7 @@ import { DocHeader, H2, P, Code, Callout, NextCard } from "@/components/docs/doc
 
 export const metadata: Metadata = {
   title: "Cursor",
-  description: "Use ShiftCut inside Cursor — install the skills and edit video from the composer.",
+  description: "Use UltraCut inside Cursor — install the skills and edit video from the composer.",
 };
 
 export default function Cursor() {
@@ -12,11 +12,11 @@ export default function Cursor() {
       <DocHeader
         eyebrow="Agents"
         title="Cursor"
-        intro="Drive ShiftCut from Cursor's composer. Reference a video and describe the edit — Cursor runs the operations against the local engine."
+        intro="Drive UltraCut from Cursor's composer. Reference a video and describe the edit — Cursor runs the operations against the local engine."
       />
       <H2>Install</H2>
-      <Code>{`$ npx skills add Vadagon/shiftcut`}</Code>
-      <P>Reload Cursor so it picks up the ShiftCut skill.</P>
+      <Code>{`$ npx skills add Vadagon/ultracut`}</Code>
+      <P>Reload Cursor so it picks up the UltraCut skill.</P>
       <H2>Make an edit</H2>
       <Code>{`@media/interview.mp4 cut this into 5 shorts with
 captions and export vertical`}</Code>

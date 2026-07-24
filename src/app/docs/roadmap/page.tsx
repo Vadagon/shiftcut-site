@@ -3,7 +3,7 @@ import { DocHeader, P } from "@/components/docs/doc-ui";
 
 export const metadata: Metadata = {
   title: "Roadmap",
-  description: "Where ShiftCut is headed — editing depth, surfaces, and the agent ecosystem.",
+  description: "Where UltraCut is headed — editing depth, surfaces, and the agent ecosystem.",
 };
 
 const phases = [
@@ -43,7 +43,7 @@ export default function Roadmap() {
       <DocHeader
         eyebrow="Reference"
         title="Roadmap"
-        intro="ShiftCut is early and moving fast. Editing depth comes first; surfaces and platform follow."
+        intro="UltraCut is early and moving fast. Editing depth comes first; surfaces and platform follow."
       />
 
       <P>

@@ -1,7 +1,7 @@
 // Timeline domain types. Structure adapted from OpenCut (MIT, see /NOTICE):
 // tracks OWN their elements; an element is positioned by startTime and trimmed
 // by trimStart/trimEnd against its source duration.
-// ShiftCut addition: every element carries a `params` bag (transform + type-
+// UltraCut addition: every element carries a `params` bag (transform + type-
 // specific values) that drives the HTML preview + inspector + MCP.
 
 export type TrackType = "media" | "text" | "audio";

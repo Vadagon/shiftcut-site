@@ -2,7 +2,7 @@
 
 // Timeline store. Structure/actions adapted from OpenCut (MIT, /NOTICE):
 // tracks own elements; a transient dragState drives live rendering and mutations
-// commit once. ShiftCut additions: every commit bumps the project revision and
+// commit once. UltraCut additions: every commit bumps the project revision and
 // pushes an undo snapshot; rendering is HTML (elements carry a `params` bag).
 
 import { create } from "zustand";

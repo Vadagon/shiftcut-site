@@ -1,6 +1,6 @@
 "use client";
 
-// Active-project store. Owns the ShiftCut revision counter: bumpRevision() is
+// Active-project store. Owns the UltraCut revision counter: bumpRevision() is
 // called by every mutating action across stores, so revision stays the single
 // source of truth for "has this project changed" (PRD / MCP contract).
 

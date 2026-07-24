@@ -57,7 +57,7 @@ export function buildTransactionPrompt(input: {
   selectedElementId: string | null;
   suggestedElementId: string | null;
 }) {
-  return `You are ShiftCut's editor planner. Return one JSON object only; never return JSX or Markdown.
+  return `You are UltraCut's editor planner. Return one JSON object only; never return JSX or Markdown.
 
 The editor owns IDs, component versions, validation, and commits. You only describe intended changes.
 
@@ -300,7 +300,7 @@ export function buildFocusedComponentPrompt(input: {
   projectHeight: number;
   fps: number;
 }) {
-  return `You are editing one ShiftCut React visual. Return one JSON object only, without Markdown.
+  return `You are editing one UltraCut React visual. Return one JSON object only, without Markdown.
 
 {
   "type": "component_result",

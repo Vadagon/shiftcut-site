@@ -4,7 +4,7 @@ import { DocHeader, H2, P, ComingSoon, NextCard } from "@/components/docs/doc-ui
 export const metadata: Metadata = {
   title: "Editing operations",
   description:
-    "The edits ShiftCut can make to a composition — cutting, understanding, captioning, transforming, and exporting. All local.",
+    "The edits UltraCut can make to a composition — cutting, understanding, captioning, transforming, and exporting. All local.",
 };
 
 const groups = [
@@ -70,7 +70,7 @@ export default function Operations() {
 
       <P>
         Need something from scratch — an intro, a title card, motion graphics?
-        ShiftCut builds those as compositions too. Editing real footage comes
+        UltraCut builds those as compositions too. Editing real footage comes
         first; generation follows.
       </P>
 

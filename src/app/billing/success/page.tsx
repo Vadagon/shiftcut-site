@@ -7,7 +7,7 @@ import { ActivateSubscriberSession } from "./activate-subscriber-session";
 
 export const metadata: Metadata = {
   title: "You're all set",
-  description: "Your ShiftCut AI Copilot subscription is active.",
+  description: "Your UltraCut AI Copilot subscription is active.",
 };
 
 export default function BillingSuccessPage() {

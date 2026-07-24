@@ -3,7 +3,7 @@ import { DocHeader, H2, P, Code, NextCard } from "@/components/docs/doc-ui";
 
 export const metadata: Metadata = {
   title: "Gemini CLI",
-  description: "Use ShiftCut with Gemini CLI — install the skills and edit video from your terminal.",
+  description: "Use UltraCut with Gemini CLI — install the skills and edit video from your terminal.",
 };
 
 export default function GeminiCli() {
@@ -12,10 +12,10 @@ export default function GeminiCli() {
       <DocHeader
         eyebrow="Agents"
         title="Gemini CLI"
-        intro="Wire ShiftCut into Gemini CLI to edit video straight from your terminal, driven by natural language."
+        intro="Wire UltraCut into Gemini CLI to edit video straight from your terminal, driven by natural language."
       />
       <H2>Install</H2>
-      <Code>{`$ npx skills add Vadagon/shiftcut`}</Code>
+      <Code>{`$ npx skills add Vadagon/ultracut`}</Code>
       <H2>Make an edit</H2>
       <Code>{`❯ turn media/stream.mp4 into three shorts
   with bold captions`}</Code>

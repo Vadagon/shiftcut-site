@@ -4,7 +4,7 @@ import { site } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Terms of Service",
-  description: "The terms governing use of ShiftCut and the ShiftCut AI Copilot subscription.",
+  description: "The terms governing use of UltraCut and the UltraCut AI Copilot subscription.",
 };
 
 const UPDATED = "July 23, 2026";
@@ -13,15 +13,15 @@ export default function TermsPage() {
   return (
     <LegalPage title="Terms of Service" updated={UPDATED}>
       <p>
-        These Terms of Service (&ldquo;Terms&rdquo;) govern your use of the ShiftCut website,
-        editor, and the ShiftCut AI Copilot subscription (together, the &ldquo;Service&rdquo;),
+        These Terms of Service (&ldquo;Terms&rdquo;) govern your use of the UltraCut website,
+        editor, and the UltraCut AI Copilot subscription (together, the &ldquo;Service&rdquo;),
         provided by {site.company} (&ldquo;we&rdquo;, &ldquo;us&rdquo;). By using the Service you
         agree to these Terms. If you do not agree, do not use the Service.
       </p>
 
       <Section heading="1. The Service">
         <p>
-          ShiftCut is an AI-native video editor. The editor, local timeline editing, on-device MP4
+          UltraCut is an AI-native video editor. The editor, local timeline editing, on-device MP4
           export, and MCP access (bringing your own agent such as Codex, Claude Code, or Gemini) are
           free and run locally in your browser. The optional <strong>AI Copilot</strong> is a paid
           subscription that provides in-editor, natural-language editing powered by a third-party
@@ -102,7 +102,7 @@ export default function TermsPage() {
 
       <Section heading="6. Open source">
         <p>
-          The ShiftCut editor and framework are released under the Apache-2.0 license. Your use of the
+          The UltraCut editor and framework are released under the Apache-2.0 license. Your use of the
           open-source components is governed by that license.
         </p>
       </Section>

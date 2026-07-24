@@ -46,7 +46,7 @@ export function SiteFooter() {
             <div className="flex items-center gap-2.5">
               <Mark className="h-6 w-6" />
               <span className="text-[15px] font-semibold tracking-tight">
-                ShiftCut
+                UltraCut
               </span>
             </div>
             <p className="mt-3 max-w-xs text-sm leading-relaxed text-fg-muted">
@@ -86,7 +86,7 @@ export function SiteFooter() {
 
         <div className="mt-12 flex flex-col items-start justify-between gap-3 border-t border-border pt-6 text-xs text-fg-subtle sm:flex-row sm:items-center">
           <p>
-            © {new Date().getFullYear()} ShiftCut — a project by{" "}
+            © {new Date().getFullYear()} UltraCut — a project by{" "}
             <a
               href={site.companyUrl}
               target="_blank"

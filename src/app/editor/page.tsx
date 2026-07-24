@@ -54,7 +54,7 @@ export default function EditorHome() {
     <div className="min-h-dvh bg-[#e9e8e5] text-[#35332f]">
       <header className="flex h-14 items-center justify-between border-b border-[#cecdc9] bg-[#efeeeb] px-4">
         <Link href="/" className="flex items-center gap-2 text-[13px] font-semibold text-[#45423e]">
-          <Mark className="h-5 w-5" /><span>ShiftCut</span>
+          <Mark className="h-5 w-5" /><span>UltraCut</span>
         </Link>
         <div className="absolute left-1/2 -translate-x-1/2 text-[13px] font-medium text-[#5b5752]">Projects</div>
         <div className="flex items-center gap-3">
@@ -148,7 +148,7 @@ function EditorMiniature() {
       <div className="flex h-7 items-center justify-between border-b border-[#c9c7c2] px-2 text-[7px] font-semibold text-[#67625c]"><span>AI</span><span>VIEWER</span><span className="bg-[#e57438] px-2 py-1 text-white">Export</span></div>
       <div className="grid h-[92px] grid-cols-[32%_1fr]">
         <div className="border-r border-[#c9c7c2] p-2"><div className="h-1.5 w-10 bg-[#b4b0aa]" /><div className="mt-2 h-1 w-full bg-[#d3d0cb]" /><div className="mt-1 h-1 w-4/5 bg-[#d3d0cb]" /><div className="mt-1 h-1 w-3/5 bg-[#d3d0cb]" /></div>
-        <div className="flex items-center justify-center bg-[#e9e7e3]"><div className="h-[72px] w-[41px] bg-[#171717] p-1"><div className="mt-6 h-3 bg-[#d16e3e] text-center text-[4px] font-bold text-white">SHIFT CUT</div></div></div>
+        <div className="flex items-center justify-center bg-[#e9e7e3]"><div className="h-[72px] w-[41px] bg-[#171717] p-1"><div className="mt-6 h-3 bg-[#d16e3e] text-center text-[4px] font-bold text-white">ULTRACUT</div></div></div>
       </div>
       <div className="border-t border-[#aaa69f] bg-[#e6e4e0]">
         <div className="h-5 border-b border-[#c9c7c2]" />

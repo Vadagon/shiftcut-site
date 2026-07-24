@@ -456,7 +456,7 @@ export function AiChat() {
         assets: currentAssets.map((asset) => ({ id: asset.id, name: asset.name, kind: asset.kind, mime: asset.mime, duration: asset.duration, width: asset.width, height: asset.height, size: asset.size })),
       },
     });
-    await navigator.clipboard.writeText(`# ShiftCut full debug error\n\n${JSON.stringify(payload, null, 2)}`);
+    await navigator.clipboard.writeText(`# UltraCut full debug error\n\n${JSON.stringify(payload, null, 2)}`);
     setCopiedErrorId(request.id);
     window.setTimeout(() => setCopiedErrorId(null), 1600);
   };
@@ -532,7 +532,7 @@ export function AiChat() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <h2 id="ai-subscription-title" className="text-[16px] font-semibold text-[#302e2b]">Use AI editing</h2>
-                <p className="mt-2 text-[12px] leading-5 text-[#69645e]">Subscribe to use ShiftCut AI, or connect your own agent over MCP.</p>
+                <p className="mt-2 text-[12px] leading-5 text-[#69645e]">Subscribe to use UltraCut AI, or connect your own agent over MCP.</p>
               </div>
               <button type="button" onClick={() => setPaywallOpen(false)} aria-label="Close" className="text-[19px] leading-none text-[#77726c] hover:text-[#302e2b]">×</button>
             </div>
@@ -669,7 +669,7 @@ function HistoryDrawer({ messages, onClose }: { messages: ChatMessage[]; onClose
         assets: currentAssets.map((asset) => ({ id: asset.id, name: asset.name, kind: asset.kind, mime: asset.mime, duration: asset.duration, width: asset.width, height: asset.height, size: asset.size })),
       },
     });
-    const label = level === "summary" ? "ShiftCut debug summary" : "ShiftCut full debug log";
+    const label = level === "summary" ? "UltraCut debug summary" : "UltraCut full debug log";
     await copy(`${level}-${requestIndex}`, `# ${label}\n\n${JSON.stringify(payload, null, 2)}`);
   };
   const requests = messages.flatMap((message, requestIndex) => {

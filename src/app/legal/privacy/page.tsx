@@ -4,7 +4,7 @@ import { site } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Privacy Policy",
-  description: "How ShiftCut handles your data. Projects stay local; billing is handled by Creem.",
+  description: "How UltraCut handles your data. Projects stay local; billing is handled by Creem.",
 };
 
 const UPDATED = "July 23, 2026";
@@ -14,7 +14,7 @@ export default function PrivacyPage() {
     <LegalPage title="Privacy Policy" updated={UPDATED}>
       <p>
         This Privacy Policy explains how {site.company} (&ldquo;we&rdquo;) handles information in
-        connection with ShiftCut (the &ldquo;Service&rdquo;). We built ShiftCut to be local-first: by
+        connection with UltraCut (the &ldquo;Service&rdquo;). We built UltraCut to be local-first: by
         default, your work never leaves your device.
       </p>
 

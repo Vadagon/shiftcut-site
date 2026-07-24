@@ -1,7 +1,7 @@
 // StorageService — single facade over the IndexedDB + OPFS adapters.
 // Design adapted from OpenCut (MIT, /NOTICE): projects in one IndexedDB store,
 // per-project media metadata (IndexedDB) + media binaries (OPFS), and per-project
-// timeline (IndexedDB). ShiftCut renders HTML (not canvas), so media binaries are
+// timeline (IndexedDB). UltraCut renders HTML (not canvas), so media binaries are
 // served back as object URLs for <video>/<img> in the preview.
 
 import type { TProject } from "@/types/project";

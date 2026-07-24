@@ -16,11 +16,11 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL(`https://${site.domain}`),
   title: {
-    default: "ShiftCut — Let your AI edit your videos",
-    template: "%s — ShiftCut",
+    default: "UltraCut — Let your AI edit your videos",
+    template: "%s — UltraCut",
   },
   description:
-    "Open any video, tell Claude Code, Cursor, or Codex what you want, and ShiftCut does the editing — right on your machine. CapCut on autopilot. Free and open source.",
+    "Open any video, tell Claude Code, Cursor, or Codex what you want, and UltraCut does the editing — right on your machine. CapCut on autopilot. Free and open source.",
   keywords: [
     "AI video editor",
     "edit video with AI",
@@ -31,16 +31,16 @@ export const metadata: Metadata = {
     "open source video editor",
   ],
   openGraph: {
-    title: "ShiftCut — Let your AI edit your videos",
+    title: "UltraCut — Let your AI edit your videos",
     description:
       "Open any video. Tell your AI what you want. Get it back edited. CapCut on autopilot — free, open source, and running on your machine.",
     url: `https://${site.domain}`,
-    siteName: "ShiftCut",
+    siteName: "UltraCut",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "ShiftCut — Let your AI edit your videos",
+    title: "UltraCut — Let your AI edit your videos",
     description:
       "Open any video, tell your AI what you want, and it does the editing. CapCut on autopilot. Works with Claude Code, Cursor, Codex, and Gemini CLI.",
   },

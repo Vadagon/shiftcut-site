@@ -9,7 +9,7 @@ import { plans, site } from "@/lib/site";
 export const metadata: Metadata = {
   title: "Pricing",
   description:
-    "ShiftCut is free forever with your own agent (Codex, Claude, Gemini). The built-in AI copilot is $10/mo, or $60/yr with a 3-day free trial. Billed securely via Creem.",
+    "UltraCut is free forever with your own agent (Codex, Claude, Gemini). The built-in AI copilot is $10/mo, or $60/yr with a 3-day free trial. Billed securely via Creem.",
 };
 
 export default function PricingPage() {
@@ -105,7 +105,7 @@ export default function PricingPage() {
                 },
                 {
                   q: "Who processes payments?",
-                  a: "Payments are securely processed by Creem, our merchant of record. ShiftCut never sees or stores your card details.",
+                  a: "Payments are securely processed by Creem, our merchant of record. UltraCut never sees or stores your card details.",
                 },
                 {
                   q: "Refunds?",

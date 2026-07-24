@@ -66,7 +66,7 @@ export function TerminalDemo() {
         <span className="h-3 w-3 rounded-full bg-[#febc2e]" />
         <span className="h-3 w-3 rounded-full bg-[#28c840]" />
         <span className="ml-2 font-mono text-xs text-fg-subtle">
-          claude-code — shiftcut
+          claude-code — ultracut
         </span>
       </div>
 

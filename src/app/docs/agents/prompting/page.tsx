@@ -4,7 +4,7 @@ import { DocHeader, H2, P, Code, Callout, NextCard } from "@/components/docs/doc
 export const metadata: Metadata = {
   title: "Prompting",
   description:
-    "How to prompt your agent for great edits with ShiftCut — the vocabulary of cuts, captions, reframing, and pacing.",
+    "How to prompt your agent for great edits with UltraCut — the vocabulary of cuts, captions, reframing, and pacing.",
 };
 
 const vocab = [
@@ -21,7 +21,7 @@ export default function Prompting() {
       <DocHeader
         eyebrow="Agents"
         title="Prompting"
-        intro="ShiftCut edits from intent. The clearer the outcome you describe, the better the first result — and you refine from there."
+        intro="UltraCut edits from intent. The clearer the outcome you describe, the better the first result — and you refine from there."
       />
 
       <H2>Name the source, outcome, and style</H2>
@@ -51,7 +51,7 @@ export default function Prompting() {
       <Callout title="Iterate, don't restart">
         After the first render, refine conversationally: &quot;tighten the
         open,&quot; &quot;bigger captions,&quot; &quot;export a square version
-        too.&quot; ShiftCut edits the existing project instead of starting over.
+        too.&quot; UltraCut edits the existing project instead of starting over.
       </Callout>
 
       <H2>Warm starts</H2>

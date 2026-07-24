@@ -4,7 +4,7 @@ import { DocHeader, H2, P, Code, Callout, NextCard } from "@/components/docs/doc
 export const metadata: Metadata = {
   title: "Claude Code",
   description:
-    "Use ShiftCut with Claude Code — install the skills, drive edits from prompts, and iterate conversationally.",
+    "Use UltraCut with Claude Code — install the skills, drive edits from prompts, and iterate conversationally.",
 };
 
 export default function ClaudeCode() {
@@ -13,23 +13,23 @@ export default function ClaudeCode() {
       <DocHeader
         eyebrow="Agents"
         title="Claude Code"
-        intro="Claude Code is a first-class surface for ShiftCut. The code experience feels like Cursor; the editing power feels like CapCut."
+        intro="Claude Code is a first-class surface for UltraCut. The code experience feels like Cursor; the editing power feels like CapCut."
       />
 
       <H2>Install</H2>
-      <Code>{`$ npx skills add Vadagon/shiftcut`}</Code>
+      <Code>{`$ npx skills add Vadagon/ultracut`}</Code>
       <P>
-        Restart Claude Code, then start any request with <code>/shiftcut</code>{" "}
+        Restart Claude Code, then start any request with <code>/ultracut</code>{" "}
         to load the editing context.
       </P>
 
       <H2>Make an edit</H2>
       <P>Describe intent — Claude plans operations and runs them:</P>
-      <Code>{`❯ /shiftcut open media/talk.mp4, remove filler words,
+      <Code>{`❯ /ultracut open media/talk.mp4, remove filler words,
   and make a 60s highlight for LinkedIn`}</Code>
 
       <Callout title="It reasons about your footage">
-        Because ShiftCut exposes transcripts, scenes, and silences as structured
+        Because UltraCut exposes transcripts, scenes, and silences as structured
         state, Claude edits against what&apos;s actually in the video instead of
         guessing at timestamps.
       </Callout>

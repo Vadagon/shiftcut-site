@@ -41,7 +41,7 @@ Paste each product id into the matching env var.
 Point a Creem webhook at:
 
 ```
-https://shiftcut.verblike.com/api/creem/webhook
+https://ultracut.verblike.com/api/creem/webhook
 ```
 
 Subscribe to subscription lifecycle events (active, paid, trialing, canceled,
@@ -79,7 +79,7 @@ expired, past_due) and refunds. Copy the signing secret into `CREEM_WEBHOOK_SECR
 | Privacy Policy | `/legal/privacy` |
 | Terms of Service | `/legal/terms` |
 | Refund / cancellation policy | `/legal/refund` |
-| Reachable support email shown on site | Footer on every page (`shiftcut@verblike.com`) |
+| Reachable support email shown on site | Footer on every page (`ultracut@verblike.com`) |
 | Understandable product | Home + pricing describe the editor and AI Copilot |
 | Cancel available in-product | Billing portal link (Creem) + documented on pricing/refund |
 | AI moderation integrated | `src/lib/moderation.ts`, enforced in the chat proxy |

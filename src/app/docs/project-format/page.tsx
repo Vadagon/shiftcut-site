@@ -4,7 +4,7 @@ import { DocHeader, H2, P, Code, Callout } from "@/components/docs/doc-ui";
 export const metadata: Metadata = {
   title: "Project format",
   description:
-    "A ShiftCut project is a small web project — meta.json, an index.html composition, compositions, and assets. Plain, diffable, reproducible.",
+    "A UltraCut project is a small web project — meta.json, an index.html composition, compositions, and assets. Plain, diffable, reproducible.",
 };
 
 export default function ProjectFormat() {
@@ -13,7 +13,7 @@ export default function ProjectFormat() {
       <DocHeader
         eyebrow="Reference"
         title="Project format"
-        intro="A ShiftCut project is a small web project on disk. It's plain text, so it diffs cleanly and renders the same everywhere."
+        intro="A UltraCut project is a small web project on disk. It's plain text, so it diffs cleanly and renders the same everywhere."
       />
 
       <H2>Layout</H2>
@@ -41,7 +41,7 @@ export default function ProjectFormat() {
       </Callout>
 
       <P>
-        This is the same technical model as HyperFrames — ShiftCut keeps it and
+        This is the same technical model as HyperFrames — UltraCut keeps it and
         adds the local understanding and editing layer on top.
       </P>
     </>
